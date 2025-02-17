@@ -26,7 +26,7 @@ from rlbench.backend.utils import rgb_handles_to_mask
 from .coord_transforms import convert_gripper_pose_world_to_image, quat_to_euler, euler_to_quat
 # from .visualize import plot_attention
 from .recorder import TaskRecorder, StaticCameraMotion, CircleCameraMotion, AttachedCameraMotion
-
+from .rlbench_planning import EndEffectorPoseViaPlanning2
 
 CAMERA_ATTR = {
     "front": "_cam_front",
@@ -57,6 +57,8 @@ class Mover:
             return self._task.step(action)
 
         target = action.copy()
+        if target[0]>10:#去除掉标志额外加的值
+            target[0]-=20
         if self._last_action is not None:
             action[7] = self._last_action[7].copy()
 
@@ -140,7 +142,7 @@ class RLBenchEnv(object):
             apply_rgb, apply_depth, apply_pc, apply_mask, apply_cameras, image_size,
         )
         self.action_mode = MoveArmThenGripper(
-            arm_action_mode=EndEffectorPoseViaPlanning(collision_checking=False),
+            arm_action_mode=EndEffectorPoseViaPlanning2(collision_checking=False),
             gripper_action_mode=Discrete(),
         )
         self.env = Environment(

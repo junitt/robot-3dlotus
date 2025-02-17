@@ -3,7 +3,8 @@ ckpt_step=140000
 # test: with groundtruth task planner and groundtruth object grounding
 #only evaluate l4 task record_video保存video
     # --record_video \
-    # --video_dir data/video/seed${seed}\
+    # --video_dir data/video/${split}/seed${seed}\
+    # --not_include_robot_cameras \
 for seed in {200..600..100}
 do
 for split in mytest
@@ -12,6 +13,8 @@ CUDA_VISIBLE_DEVICES=5 python genrobo3d/evaluation/eval_robot_pipeline_server.py
     --full_gt \
     --record_video \
     --video_dir data/video/${split}/seed${seed}\
+    --not_include_robot_cameras \
+    --max_steps 15\
     --pipeline_config_file genrobo3d/configs/rlbench/robot_pipeline_gt.yaml \
     --mp_expr_dir ${expr_dir} \
     --mp_ckpt_step ${ckpt_step} \

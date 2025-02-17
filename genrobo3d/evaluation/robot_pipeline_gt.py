@@ -65,7 +65,7 @@ class GroundtruthVision(object):
         xyz_shift='center', xyz_norm=False, use_height=True,
         pc_label_type='coarse', use_color=False,
     ):
-        self.taskvar_gt_target_labels = json.load(open(gt_label_file))
+        self.taskvar_gt_target_labels = json.load(open(gt_label_file))#taskvars_target_label_zrange.json文件
         self.workspace = get_robot_workspace(real_robot=False)
         self.TABLE_HEIGHT = self.workspace['TABLE_HEIGHT']
 
@@ -210,6 +210,7 @@ class GroundtruthRobotPipeline(object):
 
         # caches
         self.set_system_caches()
+        self._ori_gripper_pose={}#{taskvar_episode_id:action}
 
     def set_system_caches(self):
         self.action_embeds, self.query_embeds = {}, {}
@@ -229,6 +230,7 @@ class GroundtruthRobotPipeline(object):
         taskvar = f'{task_str}+{variation}'
 
         if step_id == 0:
+            self._ori_gripper_pose[f'{taskvar}_{episode_id}'] = copy.deepcopy(obs_state_dict['gripper'])#记录原始夹爪状态
             cache = EasyDict(
                 valid_actions = [], object_vars = {}
             )
@@ -284,11 +286,19 @@ class GroundtruthRobotPipeline(object):
 
         plan = cache.highlevel_plans[cache.highlevel_step_id]
         if plan is None:
+            print("plan is None")
             return {'action': np.zeros((8, ))}
-        
+        # print(f"current action------- {plan['action']}")
         if plan['action'] == 'release':
             action = gripper_pose
             action[7] = 1
+            cache.highlevel_step_id += 1
+            return {'action': action, 'cache': cache}
+        
+        if plan['action'] == 'myrecover':
+            action = copy.deepcopy(self._ori_gripper_pose[f'{taskvar}_{episode_id}']) #最开始的gripper状态
+            action[0] += 20 # 返回加2开启避障模式
+            action[7] = gripper_pose[7]
             cache.highlevel_step_id += 1
             return {'action': action, 'cache': cache}
 
