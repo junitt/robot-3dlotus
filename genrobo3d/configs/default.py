@@ -21,6 +21,7 @@ _C.output_dir = None
 _C.checkpoint = None
 _C.checkpoint_strict_load = True # true, false
 _C.CMD_TRAILING_OPTS = []  # store command line options as list of strings
+_C.world_size = 1
 
 # -----------------------------------------------------------------------------
 # TRAIN

@@ -8,7 +8,7 @@ export WORLD_SIZE=1  # 单机多卡时设置为 GPU 数量
 export RANK=0  # 当前进程的 rank
 
 
-output_dir=data/experiments/gembench/3dlotusplus/v2
+output_dir=data/experiments/gembench/3dlotusplus/normal
 
 rot_type=euler_disc
 npoints=4096
@@ -17,8 +17,7 @@ max_traj_len=5
 batch_size=8
 
 # 使用 torchrun 启动分布式训练
-CUDA_VISIBLE_DEVICES=4 torchrun --nproc_per_node=$WORLD_SIZE --nnodes=1 --master_addr=$MASTER_ADDR --master_port=$MASTER_PORT \
-    genrobo3d/train/train_motion_planner.py \
+CUDA_VISIBLE_DEVICES=4 python genrobo3d/train/train_motion_planner.py \
     --exp-config genrobo3d/configs/rlbench/motion_planner_ptv3.yaml \
     output_dir ${output_dir} \
     TRAIN.num_epochs null TRAIN.num_train_steps 150000 \
