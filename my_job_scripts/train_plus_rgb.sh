@@ -8,7 +8,7 @@ export WORLD_SIZE=1  # 单机多卡时设置为 GPU 数量
 export RANK=0  # 当前进程的 rank
 
 
-output_dir=data/experiments/gembench/3dlotusplus/normal
+output_dir=data/experiments/gembench/3dlotusplus/add_rgb
 
 rot_type=euler_disc
 npoints=4096
@@ -17,7 +17,7 @@ max_traj_len=5
 batch_size=8
 
 # 使用 torchrun 启动分布式训练
-CUDA_VISIBLE_DEVICES=4 python genrobo3d/train/train_motion_planner.py \
+CUDA_VISIBLE_DEVICES=5 python genrobo3d/train/train_motion_planner.py \
     --exp-config genrobo3d/configs/rlbench/motion_planner_ptv3.yaml \
     output_dir ${output_dir} \
     TRAIN.num_epochs null TRAIN.num_train_steps 150000 \
@@ -45,7 +45,7 @@ CUDA_VISIBLE_DEVICES=4 python genrobo3d/train/train_motion_planner.py \
     TRAIN_DATASET.instr_include_objects False VAL_DATASET.instr_include_objects False \
     TRAIN_DATASET.action_embed_file data/gembench/train_dataset/motion_keysteps_bbox_pcd/action_embeds_clip.npy \
     VAL_DATASET.action_embed_file data/gembench/train_dataset/motion_keysteps_bbox_pcd/action_embeds_clip.npy \
-    TRAIN_DATASET.use_color False VAL_DATASET.use_color False \
+    TRAIN_DATASET.use_color True VAL_DATASET.use_color True \
     MODEL.ptv3_config.drop_path 0.0 MODEL.ptv3_config.attn_drop 0.1 MODEL.ptv3_config.proj_drop 0.1 \
     MODEL.action_config.dropout 0.2 \
     MODEL.action_config.voxel_size 0.01 \
@@ -53,7 +53,7 @@ CUDA_VISIBLE_DEVICES=4 python genrobo3d/train/train_motion_planner.py \
     MODEL.action_config.dim_actions 7 MODEL.action_config.rot_pred_type ${rot_type} \
     MODEL.action_config.pos_pred_type heatmap_disc \
     MODEL.action_config.pos_heatmap_temp 0.1 \
-    MODEL.ptv3_config.in_channels 4 \
+    MODEL.ptv3_config.in_channels 7 \
     MODEL.ptv3_config.pdnorm_only_decoder False \
     MODEL.ptv3_config.qk_norm True \
     MODEL.ptv3_config.scaled_cosine_attn False MODEL.ptv3_config.enable_flash True \
