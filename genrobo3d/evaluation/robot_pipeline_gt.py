@@ -169,13 +169,13 @@ class GroundtruthVision(object):
             pcd_ft = np.concatenate([pcd_ft, pcd_rgb], -1)
 
         outs = {
-            'pc_fts': torch.from_numpy(pcd_ft).float(),
-            'pc_labels': torch.from_numpy(pcd_label).long(),
-            'offset': torch.LongTensor([pcd_xyz.shape[0]]),
-            'npoints_in_batch': [pcd_xyz.shape[0]],
-            'pc_centroids': pc_centroid,
-            'pc_radius': pc_radius,
-            'ee_poses': torch.from_numpy(gripper_pose).float().unsqueeze(0),
+            'pc_fts': torch.from_numpy(pcd_ft).float(),#所有的feature，坐标：经过归一化（xyz_shift 和 xyz_norm）后的三维坐标 (x, y, z)。
+            'pc_labels': torch.from_numpy(pcd_label).long(),#一维标签
+            'offset': torch.LongTensor([pcd_xyz.shape[0]]),#当前点云中的有效点数
+            'npoints_in_batch': [pcd_xyz.shape[0]],#总共有多少点
+            'pc_centroids': pc_centroid,#用于归一化的中心点，可以后续逆归一化
+            'pc_radius': pc_radius,#点云归一化时的缩放半径
+            'ee_poses': torch.from_numpy(gripper_pose).float().unsqueeze(0),#末端执行器（End-Effector）的归一化位姿。
         }
 
         return outs
