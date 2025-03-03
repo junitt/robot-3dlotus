@@ -150,6 +150,8 @@ class ActionHead(nn.Module):
 
 class MotionPlannerPTV3AdaNorm(BaseModel):
     """Adaptive batch/layer normalization conditioned on text/pose/stepid
+        对外接口forward
+        
     """
     def __init__(self, config):
         super().__init__()
