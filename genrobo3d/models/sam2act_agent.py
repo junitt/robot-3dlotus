@@ -37,7 +37,6 @@ class SAM2Act_Agent2(SAM2Act_Agent):
         wpt = gt_traj[:,0,:3].reshape(-1,3)
         grip = gt_traj[:,0,-1].reshape(-1,1)
         batch['gt_trajs'] = torch.cat([wpt,rot,grip],1)
-        print(batch['gt_trajs'].shape)
         batch = self.prepare_batch(batch)
         if compute_loss:
             if not for_eval:

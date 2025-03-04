@@ -70,7 +70,7 @@ def main(config,cmd_args):
     config.defrost()
     rank = get_local_rank()
     config.local_rank = rank
-    default_gpu = (rank==0)
+    default_gpu = (rank==-1 or rank==0)
     world_size = config.world_size
     rank %= world_size
     ddp = world_size > 1
@@ -174,7 +174,7 @@ def main(config,cmd_args):
 
     # Load from checkpoint
     model_checkpoint_file = config.checkpoint#name of loaded check point
-
+    save_dir = os.path.join(config.output_dir,'ckpts')
     if model_checkpoint_file is not None and config.TRAIN.resume_training:
         epoch,steps = load_agent(model_checkpoint_file, agent, only_epoch=False)
         restart_epoch = epoch + 1
@@ -259,8 +259,8 @@ def main(config,cmd_args):
                 LOGGER.info('===============================================')                
 
             if global_step % config.TRAIN.save_steps == 0:
-                save_agent(agent, f"{log_dir}/model_{global_step}.pth", epoch_id,global_step)
-                save_agent(agent, f"{log_dir}/model_last.pth", epoch_id,global_step)
+                save_agent(agent, f"{save_dir}/model_{global_step}.pth", epoch_id,global_step)
+                save_agent(agent, f"{save_dir}/model_last.pth", epoch_id,global_step)
 
             if (val_dataloader is not None) and (global_step % config.TRAIN.val_steps == 0):
                 val_metrics = validate(agent, val_dataloader)
@@ -281,8 +281,8 @@ def main(config,cmd_args):
             f'==============Epoch {epoch_id} Step {global_step}===============')
         LOGGER.info(', '.join(['%s:%.4f' % (lk, lv.val) for lk, lv in running_metrics.items()]))
         LOGGER.info('===============================================')
-        save_agent(agent, f"{log_dir}/model_{global_step}.pth", epoch_id,global_step)
-        save_agent(agent, f"{log_dir}/model_last.pth", epoch_id,global_step)
+        save_agent(agent, f"{save_dir}/model_{global_step}.pth", epoch_id,global_step)
+        save_agent(agent, f"{save_dir}/model_last.pth", epoch_id,global_step)
 
         val_metrics = validate(agent, val_dataloader)
         LOGGER.info(f'=================Validation=================')
@@ -303,12 +303,12 @@ def validate(model, val_dataloader):
     pos_loss, rot_loss, open_loss, stop_loss, total_loss, num_examples, num_batches = 0, 0, 0, 0, 0, 0, 0
     open_acc, stop_acc = 0, 0
     for batch in val_dataloader:
-        pred_action, loss = model(batch, compute_loss=True)
-        pred_action = pred_action.cpu()
+        pred_action, loss = model(batch, compute_loss=True,for_eval = True)
+        pred_action = torch.tensor(pred_action)
         pred_open = torch.sigmoid(pred_action[..., -2]) > 0.5
-        open_acc += (pred_open == batch['gt_trajs'][..., -1][:,0,:].cpu()).float().sum().item()
+        open_acc += (pred_open == batch['gt_trajs'][..., -1].cpu()).float().sum().item()
         pred_stop = torch.sigmoid(pred_action[..., -1]) > 0.5
-        stop_acc += (pred_stop == batch['gt_trajs_stop'][:,0,:].cpu()).float().sum().item()
+        stop_acc += (pred_stop == batch['gt_trajs_stop'].cpu()).float().sum().item()
         pos_loss += loss['pos']
         rot_loss += loss['rot']
         open_loss += loss['open']

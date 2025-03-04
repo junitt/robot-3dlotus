@@ -15,13 +15,13 @@ rot_type=euler
 npoints=4096
 pos_bin_size=15
 max_traj_len=1
-batch_size=2
+batch_size=10
 
 # 使用 torchrun 启动分布式训练
-CUDA_VISIBLE_DEVICES=0 python genrobo3d/train/train_sam2act.py \
+CUDA_VISIBLE_DEVICES=3 python genrobo3d/train/train_sam2act.py \
     --exp-config genrobo3d/configs/rlbench/motion_planner_ptv3.yaml \
     --exp_cfg_path configs/sam2act.yaml \
-    --mvt_cfg_path mvt/configs/sam2act.yaml \
+    --mvt_cfg_path mvt/configs/sam2act_gembench.yaml \
     output_dir ${output_dir} \
     TRAIN.num_epochs null TRAIN.num_train_steps 150000 \
     TRAIN.log_steps 1000 TRAIN.save_steps 10000 TRAIN.val_steps 10000 \
