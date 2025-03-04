@@ -25,11 +25,18 @@ from genrobo3d.train.utils.misc import set_random_seed
 from genrobo3d.evaluation.common import write_to_file
 
 from genrobo3d.evaluation.robot_pipeline_gt import GroundtruthRobotPipeline
+from genrobo3d.evaluation.sam2act_pipeline import Sam2RobotPipeline
 from genrobo3d.evaluation.robot_pipeline import RobotPipeline
-
+from genrobo3d.train.utils.rvt_utils import load_cfgs
 
 class ServerArguments(tap.Tap):
     full_gt: bool = False
+    eval_model_type:str = "MotionPlannerPTV3CA"
+    exp_cfg_path:str = ""
+    exp_cfg_opts:str = ""
+    mvt_cfg_path:str = ""
+    mvt_cfg_opts:str = ""
+    
     pipeline_config_file: str
 
     device: str = 'cuda'  # cpu, cuda
@@ -76,7 +83,11 @@ def consumer_fn(args, pipeline_config, batch_queue, result_queues):
 
     # build model
     if args.full_gt:
-        actioner = GroundtruthRobotPipeline(pipeline_config)
+        if args.eval_model_type=="sam2act":
+            exp_cfg,mvt_cfg = load_cfgs(args)
+            actioner = Sam2RobotPipeline(exp_cfg,mvt_cfg,pipeline_config)
+        else:
+            actioner = GroundtruthRobotPipeline(pipeline_config)
     else:
         actioner = RobotPipeline(pipeline_config)
 
@@ -295,9 +306,14 @@ def main():
         args.mp_expr_dir = pipeline_config.motion_planner.expr_dir
     if args.mp_ckpt_step is None:
         args.mp_ckpt_step = pipeline_config.motion_planner.ckpt_step
-    mp_checkpoint_file = os.path.join(
-        args.mp_expr_dir, 'ckpts', f'model_step_{args.mp_ckpt_step}.pt'
-    )
+    if args.eval_model_type!="sam2act":
+        mp_checkpoint_file = os.path.join(
+            args.mp_expr_dir, 'ckpts', f'model_step_{args.mp_ckpt_step}.pt'
+        )
+    else:
+        mp_checkpoint_file = os.path.join(
+            args.mp_expr_dir, 'ckpt', f'model_{args.mp_ckpt_step}.pth'
+        )
     if not os.path.exists(mp_checkpoint_file):
         print(mp_checkpoint_file, 'not exists')
         return

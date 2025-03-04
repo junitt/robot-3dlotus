@@ -16,7 +16,7 @@ import torch
 from genrobo3d.configs.rlbench.constants import get_robot_workspace
 from genrobo3d.utils.point_cloud import voxelize_pcd, get_pc_foreground_mask
 from genrobo3d.utils.robot_box import RobotBox
-
+from genrobo3d.utils.rvt_clip_preprocess import get_clip_model,get_embed
 from genrobo3d.vlm_models.clip_encoder import ClipEncoder
 from genrobo3d.models.motion_planner_ptv3 import (
     MotionPlannerPTV3AdaNorm, MotionPlannerPTV3CA
@@ -217,6 +217,7 @@ class GroundtruthRobotPipeline(object):
 
     def build_motion_planner(self, mp_config, device):
         mp_model_config = get_model_config(mp_config.config_file)
+        self.model_class = mp_model_config.MODEL.model_class
         if mp_model_config.MODEL.model_class == 'MotionPlannerPTV3CA':
             motion_planner = MotionPlannerPTV3CA(mp_model_config.MODEL).to(self.device)
         else:
@@ -321,9 +322,12 @@ class GroundtruthRobotPipeline(object):
                 target_name = target_name.replace('_', ' ').strip()
                 action_name = f"{action_name} to {target_name}"
         # print(action_name)
-        action_embeds = self.clip_model(
-            'text', action_name, use_prompt=False, output_hidden_states=True
-        )[0]    # shape=(txt_len, hidden_size)
+        if self.model_class == "sam2act":
+            action_embeds = get_embed(self.clip_model,action_name)
+        else:
+            action_embeds = self.clip_model(
+                'text', action_name, use_prompt=False, output_hidden_states=True
+            )[0]    # shape=(txt_len, hidden_size)
         batch.update({
             'txt_embeds': action_embeds,
             'txt_lens':  [action_embeds.size(0)],
