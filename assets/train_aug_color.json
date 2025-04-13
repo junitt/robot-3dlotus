@@ -1,0 +1,17 @@
+{
+    "pick_and_lift+0":{"distractor_colors":["red", "cyan", "violet"],"aug_label":"object"},
+    "pick_and_lift+2":{"distractor_colors":["cyan", "white", "lime"],"aug_label":"object"},
+    "pick_and_lift+7":{"distractor_colors":["cyan", "green", "silver"],"aug_label":"object"},
+    "pick_up_cup+8":{"distractor_colors":["magenta", "green"],"aug_label":"object"},
+    "pick_up_cup+9":{"distractor_colors":["red", "silver"],"aug_label":"object"},
+    "pick_up_cup+11":{"distractor_colors":["orange", "lime"],"aug_label":"object"},
+    "slide_block_to_color_target_peract+0":{"distractor_colors":["green", "blue", "pink", "yellow"],"aug_label":"target"},
+    "slide_block_to_color_target_peract+1":{"distractor_colors":["green", "blue", "pink", "yellow"],"aug_label":"target"},
+    "reach_and_drag_peract+14":{"distractor_colors":["green", "teal", "pink", "yellow"],"aug_label":"target"},
+    "reach_and_drag_peract+18":{"distractor_colors":["green", "teal", "pink", "black"],"aug_label":"target"},
+    "close_jar_peract+15":{"distractor_colors":["azure", "maroon"],"aug_label":"target"},
+    "close_jar_peract+16":{"distractor_colors":["violet", "maroon"],"aug_label":"target"},
+    "stack_blocks+30":{"distractor_colors":["gray", "blue"],"aug_label":"object"},
+    "stack_blocks+36":{"distractor_colors":["olive", "red"],"aug_label":"object"},
+    "stack_blocks+39":{"distractor_colors":["purple", "gray"],"aug_label":"object"}
+}

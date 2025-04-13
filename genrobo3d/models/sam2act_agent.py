@@ -17,6 +17,9 @@ class SAM2Act_Agent2(SAM2Act_Agent):
         return losses
     
     def prepare_batch(self, batch):
+        batch['ee_poses']=batch['ee_poses'][:,-1].reshape(-1,1)
+        # print(batch['instr_txt'])
+        assert batch['ee_poses'].shape[0]==len(batch['txt_lens'])
         device = self._device
         for k, v in batch.items():
             if isinstance(v, torch.Tensor):
@@ -32,11 +35,14 @@ class SAM2Act_Agent2(SAM2Act_Agent):
         else:
             final_pred_actions
         '''
-        gt_traj = batch['gt_trajs'].clone()
-        rot = self.rot_transform.euler_to_quaternion(gt_traj[:,0,3:-1].reshape(-1,3).data.cpu()).float()
-        wpt = gt_traj[:,0,:3].reshape(-1,3)
-        grip = gt_traj[:,0,-1].reshape(-1,1)
-        batch['gt_trajs'] = torch.cat([wpt,rot,grip],1)
+        if compute_loss:
+            gt_traj = batch['gt_trajs'].clone()
+            assert gt_traj.shape[-1]==8
+            rot = gt_traj[:,0,3:-1].reshape(-1,4).data.cpu()
+            wpt = gt_traj[:,0,:3].reshape(-1,3)
+            grip = gt_traj[:,0,-1].reshape(-1,1)
+            batch['gt_trajs'] = torch.cat([wpt,rot,grip],1)
+
         batch = self.prepare_batch(batch)
         if compute_loss:
             if not for_eval:
@@ -45,12 +51,13 @@ class SAM2Act_Agent2(SAM2Act_Agent):
                 losses = self._tran_loss(losses)
                 return final_pred_actions, losses
             else:
-                final_pred_actions,losses = super(SAM2Act_Agent2, self)._eval(batch)
+                final_pred_actions,losses = super(SAM2Act_Agent2, self)._eval(batch,compute_loss)
                 losses = self._tran_loss(losses)
                 return final_pred_actions, losses
         else:
             #只获取动作
-            final_pred_actions,_ = super(SAM2Act_Agent2, self)._eval(batch)
+            final_pred_actions = super(SAM2Act_Agent2, self)._eval(batch,compute_loss)
+            final_pred_actions = final_pred_actions.reshape(1,1,-1)
             return final_pred_actions
         
 

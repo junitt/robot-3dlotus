@@ -18,7 +18,7 @@ _C.num_workers = 0
 # 'transition_uniform' or 'task_uniform'
 _C.sample_distribution_mode = 'transition_uniform'
 _C.train_iter = 16 * 10000
-
+_C.sam2_use_sem = False
 
 _C.exp_name = 'test'
 _C.demo = 100
@@ -38,7 +38,7 @@ _C.peract.add_rgc_loss = True
 _C.peract.num_rotation_classes = 72
 _C.peract.amp = False
 _C.peract.bnb = False
-_C.peract.transform_augmentation = False
+_C.peract.transform_augmentation = True
 _C.peract.transform_augmentation_xyz = [0.1, 0.1, 0.1]
 _C.peract.transform_augmentation_rpy = [0.0, 0.0, 20.0]
 _C.peract.same_trans_aug_per_seq = False

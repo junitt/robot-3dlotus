@@ -9,9 +9,9 @@ from genrobo3d.utils.rvt_clip_preprocess import get_clip_model,get_embed
 from sam2act.utils.rvt_utils import load_agent_only_model as load_agent_state
 import sam2act.mvt.mvt_sam2 as mvt_sam2
 from sam2act.utils.peract_utils import (
-    SCENE_BOUNDS,
     IMAGE_SIZE,
 )
+from genrobo3d.configs.rlbench.constants import SCENE_BOUNDS
 def load_agent(
     model_path=None,
     exp_cfg=None,
@@ -25,7 +25,6 @@ def load_agent(
     assert mvt_cfg is not None 
     assert exp_cfg is not None
     # load exp_cfg
-    model_folder = os.path.join(os.path.dirname(model_path))
 
     # NOTE: to not use place_with_mean in evaluation
     # needed for rvt-1 but not rvt-2
@@ -57,6 +56,7 @@ def load_agent(
         get_model_size(sam2act)
 
         agent = SAM2Act_Agent(
+            use_sem=exp_cfg.sam2_use_sem,
             network=sam2act.to(device),
             image_resolution=[IMAGE_SIZE, IMAGE_SIZE],
             add_lang=mvt_cfg.add_lang,
@@ -78,11 +78,12 @@ def load_agent(
 
 class Sam2RobotPipeline(GroundtruthRobotPipeline):
     def __init__(self,exp_cfg=None,mvt_cfg=None, config = None):
+        #config for original evaluation
         self.exp_cfg = exp_cfg
         self.mvt_cfg = mvt_cfg
         self.model_class = "sam2act"
         self.config = config
-        self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        self.device = "cuda:0"
 
         # build LLM high-level planner
         llm_config = config.llm_planner
@@ -99,6 +100,7 @@ class Sam2RobotPipeline(GroundtruthRobotPipeline):
             same_npoints_per_example=data_cfg.same_npoints_per_example, rm_robot=data_cfg.rm_robot,
             xyz_shift=data_cfg.xyz_shift, xyz_norm=data_cfg.xyz_norm, use_height=data_cfg.use_height,
             pc_label_type=data_cfg.pc_label_type if config.motion_planner.pc_label_type is None else config.motion_planner.pc_label_type, use_color=data_cfg.get('use_color', False),
+            model_class=self.model_class
         )
 
         # build motion planner

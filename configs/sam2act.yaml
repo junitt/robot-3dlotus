@@ -6,6 +6,7 @@ agent: our
 demo: 100
 bs: 4
 num_workers: 5
+sam2_use_sem: False
 epochs: 90
 sample_distribution_mode: task_uniform
 peract:

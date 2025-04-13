@@ -28,7 +28,35 @@ def get_robot_workspace(real_robot=False, use_vlm=False):
         'Z_BBOX': Z_BBOX
     }
 
+def trans_robot_workspace():
+    bounds=get_robot_workspace()
+    return [bounds['X_BBOX'][0],bounds['Y_BBOX'][0],bounds['Z_BBOX'][0],
+            bounds['X_BBOX'][1],bounds['Y_BBOX'][1],bounds['Z_BBOX'][1]
+            ]
 
+SCENE_BOUNDS = trans_robot_workspace()# [x_min, y_min, z_min, x_max, y_max, z_max]
+COLORS = [
+    ('red', (1.0, 0.0, 0.0)),
+    ('maroon', (0.5, 0.0, 0.0)),
+    ('lime', (0.0, 1.0, 0.0)),
+    ('green', (0.0, 0.5, 0.0)),
+    ('blue', (0.0, 0.0, 1.0)),
+    ('navy', (0.0, 0.0, 0.5)),
+    ('yellow', (1.0, 1.0, 0.0)),
+    ('cyan', (0.0, 1.0, 1.0)),
+    ('magenta', (1.0, 0.0, 1.0)),
+    ('silver', (0.75, 0.75, 0.75)),
+    ('gray', (0.5, 0.5, 0.5)),
+    ('orange', (1.0, 0.5, 0.0)),
+    ('olive', (0.5, 0.5, 0.0)),
+    ('purple', (0.5, 0.0, 0.5)),
+    ('teal', (0, 0.5, 0.5)),
+    ('azure', (0.0, 0.5, 1.0)),
+    ('violet', (0.5, 0.0, 1.0)),
+    ('rose', (1.0, 0.0, 0.5)),
+    ('black', (0.0, 0.0, 0.0)),
+    ('white', (1.0, 1.0, 1.0)),
+]
 
 def get_rlbench_labels(task, table=True, robot=True, wall=True, floor=True):
     # OLD with polarnet bug

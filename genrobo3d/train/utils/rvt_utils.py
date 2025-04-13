@@ -6,6 +6,10 @@ from sam2act.utils.rvt_utils import (
 import torch
 from torch.nn.parallel import DistributedDataParallel as DDP
 from sam2act.models.peract_official import PreprocessAgent2
+import yaml
+from contextlib import redirect_stdout
+import torch.distributed as dist
+import os
 
 def get_model_size(model):
     """
@@ -102,6 +106,19 @@ def load_agent(agent_path, agent=None, only_epoch=False):
 
     return epoch,steps
 
+def dump_log(exp_cfg, mvt_cfg, cmd_args, log_dir):
+    with open(f"{log_dir}/exp_cfg.yaml", "w") as yaml_file:
+        with redirect_stdout(yaml_file):
+            print(exp_cfg.dump())
+
+    with open(f"{log_dir}/mvt_cfg.yaml", "w") as yaml_file:
+        with redirect_stdout(yaml_file):
+            print(mvt_cfg.dump())
+
+    args = cmd_args.__dict__
+    with open(f"{log_dir}/args.yaml", "w") as yaml_file:
+        yaml.dump(args, yaml_file)
+
 def load_cfgs(cmd_args):
     exp_cfg = exp_cfg_mod.get_cfg_defaults()
     if cmd_args.exp_cfg_path != "":
@@ -118,3 +135,7 @@ def load_cfgs(cmd_args):
     mvt_cfg.freeze()
 
     return exp_cfg,mvt_cfg
+
+def setup(rank, world_size, port):
+    # initialize the process group
+    dist.init_process_group("nccl", rank=rank, world_size=world_size)

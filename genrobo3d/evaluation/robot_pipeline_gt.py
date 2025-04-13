@@ -21,9 +21,10 @@ from genrobo3d.vlm_models.clip_encoder import ClipEncoder
 from genrobo3d.models.motion_planner_ptv3 import (
     MotionPlannerPTV3AdaNorm, MotionPlannerPTV3CA
 )
+from genrobo3d.models.simple_policy_ptv3 import SimplePolicyPTV3CA
 from genrobo3d.configs.default import get_config as get_model_config
 from genrobo3d.evaluation.common import load_checkpoint, parse_code
-
+from genrobo3d.utils.rvt_util import instr_trans,unify_color
 
 class GroundtruthTaskPlanner(object):
     def __init__(self, gt_plan_file):
@@ -63,8 +64,9 @@ class GroundtruthVision(object):
         self, gt_label_file, num_points=4096, voxel_size=0.01, 
         same_npoints_per_example=False, rm_robot='box_keep_gripper',
         xyz_shift='center', xyz_norm=False, use_height=True,
-        pc_label_type='coarse', use_color=False,
+        pc_label_type='coarse', use_color=False,model_class=None
     ):
+        self.model_class = model_class
         self.taskvar_gt_target_labels = json.load(open(gt_label_file))#taskvars_target_label_zrange.json文件
         self.workspace = get_robot_workspace(real_robot=False)
         self.TABLE_HEIGHT = self.workspace['TABLE_HEIGHT']
@@ -78,6 +80,8 @@ class GroundtruthVision(object):
         self.xyz_norm = xyz_norm
         self.use_height = use_height
         self.use_color = use_color
+        print(f"sample {self.num_points} points")
+        print(f"self.rm_robot {self.rm_robot}")
 
     def __call__(
         self, taskvar, step_id, pcd_images, sem_images, gripper_pose, arm_links_info, 
@@ -91,16 +95,16 @@ class GroundtruthVision(object):
             pcd_rgb = rgb_images.reshape(-1, 3)
 
         # remove background and table points
-        fg_mask = get_pc_foreground_mask(pcd_xyz, self.workspace)
-        pcd_xyz = pcd_xyz[fg_mask]
-        pcd_sem = pcd_sem[fg_mask]
-        if self.use_color:
-            pcd_rgb = pcd_rgb[fg_mask]
+        # fg_mask = get_pc_foreground_mask(pcd_xyz, self.workspace)
+        # pcd_xyz = pcd_xyz[fg_mask]
+        # pcd_sem = pcd_sem[fg_mask]
+        # if self.use_color:
+        #     pcd_rgb = pcd_rgb[fg_mask]
 
-        pcd_xyz, idxs = voxelize_pcd(pcd_xyz, voxel_size=self.voxel_size)
-        pcd_sem = pcd_sem[idxs]
-        if self.use_color:
-            pcd_rgb = pcd_rgb[idxs]
+        # pcd_xyz, idxs = voxelize_pcd(pcd_xyz, voxel_size=self.voxel_size)
+        # pcd_sem = pcd_sem[idxs]
+        # if self.use_color:
+        #     pcd_rgb = pcd_rgb[idxs]
 
         if self.rm_robot != 'none':
             if self.rm_robot == 'box':
@@ -160,7 +164,7 @@ class GroundtruthVision(object):
             pc_radius = 1
         pcd_xyz = (pcd_xyz - pc_centroid) / pc_radius
         gripper_pose[:3] = (gripper_pose[:3] - pc_centroid) / pc_radius
-        
+
         pcd_ft = pcd_xyz
         if self.use_height:
             pcd_ft = np.concatenate([pcd_ft, height[:, None]], -1)
@@ -194,6 +198,7 @@ class GroundtruthRobotPipeline(object):
         mp_config_file = config.motion_planner.config_file
         mp_config = get_model_config(mp_config_file)
         data_cfg = mp_config.TRAIN_DATASET
+        self.motion_planner = self.build_motion_planner(config.motion_planner, device=self.device)
         self.instr_include_objects = data_cfg.get('instr_include_objects', False)
         self.vlm_pipeline = GroundtruthVision(
             self.config.object_grounding.gt_label_file,
@@ -201,12 +206,15 @@ class GroundtruthRobotPipeline(object):
             same_npoints_per_example=data_cfg.same_npoints_per_example, rm_robot=data_cfg.rm_robot,
             xyz_shift=data_cfg.xyz_shift, xyz_norm=data_cfg.xyz_norm, use_height=data_cfg.use_height,
             pc_label_type=data_cfg.pc_label_type if config.motion_planner.pc_label_type is None else config.motion_planner.pc_label_type, use_color=data_cfg.get('use_color', False),
+            model_class=self.model_class
         )
 
         # build motion planner
         # self.clip_model = OpenClipEncoder(device=self.device) # to encode action/object texts
-        self.clip_model = ClipEncoder(device=self.device)
-        self.motion_planner = self.build_motion_planner(config.motion_planner, device=self.device)        
+        if self.model_class == "sam2act":
+            self.clip_model = get_clip_model()
+        else:
+            self.clip_model = ClipEncoder(device=self.device)
 
         # caches
         self.set_system_caches()
@@ -220,6 +228,8 @@ class GroundtruthRobotPipeline(object):
         self.model_class = mp_model_config.MODEL.model_class
         if mp_model_config.MODEL.model_class == 'MotionPlannerPTV3CA':
             motion_planner = MotionPlannerPTV3CA(mp_model_config.MODEL).to(self.device)
+        elif mp_model_config.MODEL.model_class == 'SimplePolicyPTV3CA':
+            motion_planner = SimplePolicyPTV3CA(mp_model_config.MODEL).to(self.device)
         else:
             motion_planner = MotionPlannerPTV3AdaNorm(mp_model_config.MODEL).to(self.device)
         motion_planner.eval()
@@ -321,21 +331,28 @@ class GroundtruthRobotPipeline(object):
                 target_name = ''.join([x for x in plan['target'] if not x.isdigit()])
                 target_name = target_name.replace('_', ' ').strip()
                 action_name = f"{action_name} to {target_name}"
+            if self.model_class == "sam2act" and self.motion_planner.use_sem:
+                action_name = instr_trans(action_name)
         # print(action_name)
         if self.model_class == "sam2act":
-            action_embeds = get_embed(self.clip_model,action_name)
+            action_embeds = torch.tensor(get_embed(self.clip_model,action_name))
+            batch.update({
+                'txt_embeds': action_embeds,
+                'txt_lens':  [1],
+            })
         else:
             action_embeds = self.clip_model(
                 'text', action_name, use_prompt=False, output_hidden_states=True
             )[0]    # shape=(txt_len, hidden_size)
-        batch.update({
-            'txt_embeds': action_embeds,
-            'txt_lens':  [action_embeds.size(0)],
-        })
+            batch.update({
+                'txt_embeds': action_embeds,
+                'txt_lens':  [action_embeds.size(0)],
+            })
         
         pred_actions = self.motion_planner(batch, compute_loss=False)[0] # (max_action_len, 8)
-        pred_actions[:, 7:] = torch.sigmoid(pred_actions[:, 7:])
-        pred_actions = pred_actions.data.cpu().numpy()
+        if self.model_class != "sam2act":
+            pred_actions[:, 7:] = torch.sigmoid(pred_actions[:, 7:])
+            pred_actions = pred_actions.data.cpu().numpy()
         # print(pred_actions)
 
         # rescale the predicted position

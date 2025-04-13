@@ -81,11 +81,11 @@ def main():
                         t_rgb = rgb[t].reshape(-1, 3)[in_mask]
                         if sem is not None:
                             t_sem = sem[t].reshape(-1)[in_mask]
-                        
-                        t_pc, mask = voxelize_pcd(t_pc, voxel_size=args.voxel_size)
-                        t_rgb = t_rgb[mask]
-                        if sem is not None:
-                            t_sem = t_sem[mask]
+                        #don't need voxelize
+                        # t_pc, mask = voxelize_pcd(t_pc, voxel_size=args.voxel_size)
+                        # t_rgb = t_rgb[mask]
+                        # if sem is not None:
+                        #     t_sem = t_sem[mask]
 
                         if args.real_robot:
                             # remove point cloud outliers for noisy real point clouds

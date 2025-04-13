@@ -5,6 +5,7 @@ import argparse
 import time
 from collections import defaultdict
 from tqdm import tqdm
+import random
 import copy
 from functools import partial
 import sam2act.mvt.mvt_sam2 as mvt_sam2
@@ -21,8 +22,7 @@ import numpy as np
 from genrobo3d.train.utils.logger import LOGGER, TB_LOGGER, RunningMeter, add_log_to_file
 from genrobo3d.train.utils.save import ModelSaver, save_training_meta
 from genrobo3d.train.utils.misc import NoOp, set_dropout, set_random_seed
-from genrobo3d.train.utils.distributed import set_cuda, wrap_model, all_gather,get_local_rank
-from genrobo3d.train.utils.rvt_utils import get_model_size,load_cfgs,save_agent,load_agent
+from genrobo3d.train.utils.rvt_utils import get_model_size,load_cfgs,save_agent,load_agent,dump_log,setup
 
 from genrobo3d.train.optim import get_lr_sched, get_lr_sched_decay_rate
 from genrobo3d.train.optim.misc import build_optimizer
@@ -33,7 +33,10 @@ from genrobo3d.train.datasets.loader import build_dataloader
 from genrobo3d.train.datasets.motion_planner_dataset import (
     MotionPlannerDataset, base_collate_fn_partial, ptv3_collate_fn_partial
 )
-
+from genrobo3d.train.datasets.simple_policy_dataset import (
+    SimplePolicyDataset, base_collate_fn, ptv3_collate_fn
+)
+import torch.multiprocessing as mp
 # from genrobo3d.models.pct_motion_planner import PCTMotionPlanner
 from genrobo3d.models.motion_planner_ptv3 import (
     MotionPlannerPTV3AdaNorm, MotionPlannerPTV3CA
@@ -42,11 +45,12 @@ from genrobo3d.models.sam2act_agent import SAM2Act_Agent2 as SAM2Act_Agent
 
 from sam2act.utils.peract_utils import (
     CAMERAS,
-    SCENE_BOUNDS,
     IMAGE_SIZE,
     DATA_FOLDER,
     DATA_FOLDER_MEM,
 )
+
+from genrobo3d.configs.rlbench.constants import SCENE_BOUNDS
 
 DATASET_FACTORY = {
     'sam2act': (MotionPlannerDataset, ptv3_collate_fn_partial),
@@ -60,15 +64,16 @@ MODEL_FACTORY = {
     'MotionPlannerPTV3CA': MotionPlannerPTV3CA,
 }
 
-def get_logdir(cmd_args, exp_cfg):
-    exp = exp_cfg.exp_id + '_' + exp_cfg.exp_name
-    log_dir = os.path.join(cmd_args.log_dir, exp)
+def get_logdir(config):
+    log_dir = os.path.join(config.output_dir, 'logs')
     os.makedirs(log_dir, exist_ok=True)
     return log_dir
 
-def main(config,cmd_args):
+def main(rank,config,cmd_args):
     config.defrost()
-    rank = get_local_rank()
+    if config.world_size==1:
+        rank=-1
+        world_size = config.world_size
     config.local_rank = rank
     default_gpu = (rank==-1 or rank==0)
     world_size = config.world_size
@@ -78,7 +83,26 @@ def main(config,cmd_args):
     # ddp_utils.setup(rank, world_size=len(devices), port=port)
 
     exp_cfg,mvt_cfg = load_cfgs(cmd_args)
-    log_dir = get_logdir(cmd_args, exp_cfg)
+    log_dir = get_logdir(config)
+    exp_cfg.bs = config.TRAIN.train_batch_size
+    old_exp_cfg_peract_lr = exp_cfg.peract.lr
+    old_exp_cfg_exp_id = exp_cfg.exp_id
+
+    exp_cfg.peract.lr *= world_size * config.TRAIN.train_batch_size
+    exp_cfg.freeze()
+    print(f"train batch size {config.TRAIN.train_batch_size}, lr={exp_cfg.peract.lr}")
+    if default_gpu:
+        ## logging unchanged values to reproduce the same setting
+        temp1 = exp_cfg.peract.lr
+        temp2 = exp_cfg.exp_id
+        exp_cfg.defrost()
+        exp_cfg.peract.lr = old_exp_cfg_peract_lr
+        exp_cfg.exp_id = old_exp_cfg_exp_id
+        dump_log(exp_cfg, mvt_cfg, cmd_args, log_dir)
+        exp_cfg.peract.lr = temp1
+        exp_cfg.exp_id = temp2
+        exp_cfg.freeze()
+        
     if ddp:
         print(f"Running DDP on rank {rank}.")
 
@@ -93,7 +117,7 @@ def main(config,cmd_args):
     dataset_collate_fn = partial(dataset_collate_fn, config.MODEL.action_config.max_traj_len)
 
     trn_dataset = dataset_class(**config.TRAIN_DATASET)
-    
+    dataset_transform_color = config.TRAIN_DATASET.transform_color
     LOGGER.info(f'#num_train: {len(trn_dataset)}')
     trn_dataloader, pre_epoch = build_dataloader(
         trn_dataset, dataset_collate_fn, True, config
@@ -140,12 +164,13 @@ def main(config,cmd_args):
             rank=rank,
             **mvt_cfg,
         ).to(device)
-        if rank == 0:
+        if default_gpu:
             get_model_size(sam2act)
         if ddp:
             sam2act = DDP(sam2act, device_ids=[device], find_unused_parameters=True)
 
         agent = SAM2Act_Agent(
+            use_sem=exp_cfg.sam2_use_sem,
             network=sam2act,
             image_resolution=[IMAGE_SIZE, IMAGE_SIZE],
             add_lang=mvt_cfg.add_lang,
@@ -155,6 +180,7 @@ def main(config,cmd_args):
             cameras=CAMERAS,
             log_dir=f"{log_dir}/test_run/",
             cos_dec_max_step=config.TRAIN.num_train_steps,
+            dataset_transform_color=dataset_transform_color,
             **exp_cfg.peract,
             **exp_cfg.rvt,
         )
@@ -216,67 +242,59 @@ def main(config,cmd_args):
         
         for step, batch in enumerate(trn_dataloader):
             # forward pass
+               
+            if batch['gt_trajs'].shape[0]==1:
+                print(f"batch size low skip step {step}")
+                continue
             _, losses = agent(batch, compute_loss=True, compute_final_action=False)
 
-            # backward pass
-            # if config.TRAIN.gradient_accumulation_steps > 1:  # average loss
-            #     losses['total'] = losses['total'] / config.TRAIN.gradient_accumulation_steps
-            # losses['total'].backward()
+            if default_gpu:
+                for key, value in losses.items():#加载所有loss
+                    TB_LOGGER.add_scalar(f'step/loss_{key}', value, global_step)
+                    running_metrics.setdefault(f'loss_{key}', RunningMeter(f'loss_{key}'))
+                    running_metrics[f'loss_{key}'](value)
 
-            for key, value in losses.items():#加载所有loss
-                TB_LOGGER.add_scalar(f'step/loss_{key}', value, global_step)
-                running_metrics.setdefault(f'loss_{key}', RunningMeter(f'loss_{key}'))
-                running_metrics[f'loss_{key}'](value)
+                # optimizer update and logging
+                if (step + 1) % config.TRAIN.gradient_accumulation_steps == 0:
+                    global_step += 1
+                    # learning rate scheduling
+                    # lr_decay_rate = get_lr_sched_decay_rate(global_step, config.TRAIN)
+                    # for kp, param_group in enumerate(optimizer.param_groups):
+                    #     param_group['lr'] = lr_this_step = max(init_lrs[kp] * lr_decay_rate, 1e-8)
+                    # TB_LOGGER.add_scalar('lr', lr_this_step, global_step)
 
-            # optimizer update and logging
-            if (step + 1) % config.TRAIN.gradient_accumulation_steps == 0:
-                global_step += 1
-                # learning rate scheduling
-                # lr_decay_rate = get_lr_sched_decay_rate(global_step, config.TRAIN)
-                # for kp, param_group in enumerate(optimizer.param_groups):
-                #     param_group['lr'] = lr_this_step = max(init_lrs[kp] * lr_decay_rate, 1e-8)
-                # TB_LOGGER.add_scalar('lr', lr_this_step, global_step)
+                    # log loss
+                    # NOTE: not gathered across GPUs for efficiency
+                    TB_LOGGER.step()
 
-                # log loss
-                # NOTE: not gathered across GPUs for efficiency
-                TB_LOGGER.step()
+                    pbar.update(1)
 
-                # update model params
-                # if config.TRAIN.grad_norm is not None:
-                #     grad_norm = torch.nn.utils.clip_grad_norm_(
-                #         model.parameters(), config.TRAIN.grad_norm
-                #     )
-                #     TB_LOGGER.add_scalar('grad_norm', grad_norm, global_step)
-                # optimizer.step()
-                # optimizer.zero_grad()
-                pbar.update(1)
+                if global_step % config.TRAIN.log_steps == 0:
+                    # monitor training throughput
+                    LOGGER.info(
+                        f'==============Epoch {epoch_id} Step {global_step}===============')
+                    LOGGER.info(', '.join(['%s:%.4f' % (lk, lv.val) for lk, lv in running_metrics.items()]))
+                    LOGGER.info('===============================================')                
 
-            if global_step % config.TRAIN.log_steps == 0:
-                # monitor training throughput
-                LOGGER.info(
-                    f'==============Epoch {epoch_id} Step {global_step}===============')
-                LOGGER.info(', '.join(['%s:%.4f' % (lk, lv.val) for lk, lv in running_metrics.items()]))
-                LOGGER.info('===============================================')                
+                if global_step % config.TRAIN.save_steps == 0:
+                    save_agent(agent, f"{save_dir}/model_{global_step}.pth", epoch_id,global_step)
+                    save_agent(agent, f"{save_dir}/model_last.pth", epoch_id,global_step)
 
-            if global_step % config.TRAIN.save_steps == 0:
-                save_agent(agent, f"{save_dir}/model_{global_step}.pth", epoch_id,global_step)
-                save_agent(agent, f"{save_dir}/model_last.pth", epoch_id,global_step)
-
-            if (val_dataloader is not None) and (global_step % config.TRAIN.val_steps == 0):
-                val_metrics = validate(agent, val_dataloader)
-                LOGGER.info(f'=================Validation=================')
-                metric_str = ', '.join(['%s: %.4f' % (lk, lv) for lk, lv in val_metrics.items()])
-                LOGGER.info(metric_str)
-                LOGGER.info('===============================================')
-                if val_metrics['pos_loss'] < best_val_metric:
-                    best_val_metric = val_metrics['pos_loss']
-                    best_val_step = global_step
-                agent.train()
-
+                if (val_dataloader is not None) and (global_step % config.TRAIN.val_steps == 0):
+                    val_metrics = validate(agent, val_dataloader)
+                    LOGGER.info(f'=================Validation=================')
+                    metric_str = ', '.join(['%s: %.4f' % (lk, lv) for lk, lv in val_metrics.items()])
+                    LOGGER.info(metric_str)
+                    LOGGER.info('===============================================')
+                    if val_metrics['pos_loss'] < best_val_metric:
+                        best_val_metric = val_metrics['pos_loss']
+                        best_val_step = global_step
+                    agent.train()
+            
             if global_step >= config.TRAIN.num_train_steps:
                 break
 
-    if global_step % config.TRAIN.save_steps != 0:
+    if default_gpu and global_step % config.TRAIN.save_steps != 0:
         LOGGER.info(
             f'==============Epoch {epoch_id} Step {global_step}===============')
         LOGGER.info(', '.join(['%s:%.4f' % (lk, lv.val) for lk, lv in running_metrics.items()]))
@@ -305,16 +323,16 @@ def validate(model, val_dataloader):
     for batch in val_dataloader:
         pred_action, loss = model(batch, compute_loss=True,for_eval = True)
         pred_action = torch.tensor(pred_action)
-        pred_open = torch.sigmoid(pred_action[..., -2]) > 0.5
+        pred_open = pred_action[..., -2] > 0.5
         open_acc += (pred_open == batch['gt_trajs'][..., -1].cpu()).float().sum().item()
-        pred_stop = torch.sigmoid(pred_action[..., -1]) > 0.5
-        stop_acc += (pred_stop == batch['gt_trajs_stop'].cpu()).float().sum().item()
+        pred_stop = pred_action[..., -1] > 0.5
+        stop_acc += (pred_stop == batch['gt_trajs_stop'].reshape(-1,).cpu()).float().sum().item()
         pos_loss += loss['pos']
         rot_loss += loss['rot']
         open_loss += loss['open']
         stop_loss += loss['stop']
         total_loss += loss['total']
-        num_examples += pred_action.size(0) * pred_action.size(1)
+        num_examples += pred_action.size(0)
         num_batches += 1
         
     return {
@@ -342,7 +360,6 @@ def build_args():
 
     parser.add_argument("--mvt_cfg_opts", type=str, default="")
     parser.add_argument("--exp_cfg_opts", type=str, default="")
-    parser.add_argument("--log-dir", type=str, default="runs")
     parser.add_argument(
         "opts",
         default=None,
@@ -365,4 +382,20 @@ def build_args():
 
 if __name__ == '__main__':
     config,args = build_args()
-    main(config,args)
+    port = os.environ["MASTER_PORT"]
+    if config.world_size==1:
+        main(-1,config,args)
+    else:
+        dist_url = "env://" # default
+        # Retrieve world_size, rank and local_rank
+        world_size = int(os.environ['WORLD_SIZE'])
+        rank = int(os.environ["RANK"])
+        local_rank = int(os.environ['LOCAL_RANK'])
+
+        # Initialize the process group
+        dist.init_process_group(
+                backend="nccl",
+                init_method=dist_url,
+                world_size=world_size,
+                rank=rank)
+        main(rank,config,args)

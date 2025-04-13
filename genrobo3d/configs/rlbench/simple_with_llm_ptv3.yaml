@@ -104,7 +104,7 @@ VAL_DATASET:
   real_robot: False
   
 MODEL:
-  model_class: 'MotionPlannerPTV3AdaNorm'
+  model_class: 'SimplePolicyPTV3AdaNorm'
 
   ptv3_config:
     in_channels: 6
@@ -146,24 +146,20 @@ MODEL:
     voxel_size: 0.01 # 1cm
     context_channels: 256
 
-    pc_label_channels: 64
-    traj_embed_size: 64
-
     txt_ft_size: 512
     max_txt_len: 77
     txt_reduce: 'mean' # mean, attn
     use_ee_pose: True
-    # use_step_id: True
+    use_step_id: False
 
     max_steps: 30
     
-    reduce: 'max' # max, mean, attn
-    max_traj_len: 5 # predicted trajectory len
+    reduce: 'max' # max, mean, attn, multiscale_max
+    max_traj_len: 1 # predicted trajectory len
     dim_actions: 8  # (xyz, quaternion, openness)
-    # dim_actions: 10 # (xyz, rot6d, openness)
     pos_pred_type: 'heatmap_mlp'  # heatmap_mlp, regression, regression_delta, heatmap_disc
     pos_heatmap_temp: 0.1
-    rot_pred_type: 'euler_disc'     # quat, rot6d, euler, euler_disc
+    rot_pred_type: 'euler'     # quat, rot6d, euler, euler_delta, euler_disc
 
     dropout: 0.1
 

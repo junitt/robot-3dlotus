@@ -29,9 +29,11 @@ from genrobo3d.configs.default import get_config
 
 from genrobo3d.train.datasets.loader import build_dataloader
 from genrobo3d.train.datasets.motion_planner_dataset import (
-    MotionPlannerDataset, base_collate_fn_partial, ptv3_collate_fn_partial
+    MotionPlannerDataset, base_collate_fn_partial, ptv3_collate_fn_partial,ptv3_collate_fn_partial4simple
 )
-
+from genrobo3d.models.simple_policy_ptv3 import (
+    SimplePolicyPTV3AdaNorm, SimplePolicyPTV3CA, SimplePolicyPTV3Concat
+)
 # from genrobo3d.models.pct_motion_planner import PCTMotionPlanner
 from genrobo3d.models.motion_planner_ptv3 import (
     MotionPlannerPTV3AdaNorm, MotionPlannerPTV3CA
@@ -40,12 +42,14 @@ from genrobo3d.models.motion_planner_ptv3 import (
 
 DATASET_FACTORY = {
     'MotionPlannerPTV3AdaNorm': (MotionPlannerDataset, ptv3_collate_fn_partial),
-    'MotionPlannerPTV3CA':  (MotionPlannerDataset, ptv3_collate_fn_partial)
+    'MotionPlannerPTV3CA':  (MotionPlannerDataset, ptv3_collate_fn_partial),
+    'SimplePolicyPTV3CA': (MotionPlannerDataset, ptv3_collate_fn_partial4simple)
 }
 
 MODEL_FACTORY = {
     'MotionPlannerPTV3AdaNorm': MotionPlannerPTV3AdaNorm,
     'MotionPlannerPTV3CA': MotionPlannerPTV3CA,
+    'SimplePolicyPTV3CA': SimplePolicyPTV3CA
 }
 
 
