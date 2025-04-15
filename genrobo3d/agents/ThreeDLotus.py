@@ -1,68 +1,59 @@
-from typing import Tuple, Dict, List
-
-import os
-import json
-import jsonlines
-import tap
+import json,os
 import copy
-from pathlib import Path
-from filelock import FileLock
 
 import torch
 import numpy as np
-from scipy.special import softmax
-
-# TODO: error when import in a different order: Error /lib/x86_64-linux-gnu/libc.so.6: version `GLIBC_2.34’ not found or /lib/x86_64-linux-gnu/libstdc++.so.6: version `GLIBCXX_3.4.29' not found
-# TODO: always import torch first
+from genrobo3d.configs.rlbench.constants import get_robot_workspace
+from genrobo3d.configs.default import get_config
+from genrobo3d.models.simple_policy_ptv3 import (
+    SimplePolicyPTV3AdaNorm, SimplePolicyPTV3CA, SimplePolicyPTV3Concat
+)
+from genrobo3d.utils.robot_box import RobotBox
+from genrobo3d.train.datasets.common import gen_seq_masks
+from genrobo3d.vlm_models.clip_encoder import ClipEncoder
 import open3d as o3d
 from sklearn.neighbors import LocalOutlierFactor
 from scipy.spatial.transform import Rotation as R
+from scipy.special import softmax
+from easydict import EasyDict
+MODEL_FACTORY = {
+    'SimplePolicyPTV3AdaNorm': SimplePolicyPTV3AdaNorm,
+    'SimplePolicyPTV3CA': SimplePolicyPTV3CA,
+    'SimplePolicyPTV3Concat': SimplePolicyPTV3Concat,
+}
 
-from genrobo3d.train.utils.misc import set_random_seed
-from genrobo3d.configs.default import get_config
+class ThreeDLotusActioner(object):
+    def __init__(self):
+        expr_dir = 'data/experiments/gembench/3dlotus/v1'
+        ckpt_step = 150000
+       
+        args = EasyDict(
+            exp_config=os.path.join(expr_dir, 'logs', 'training_config.yaml'),
+            checkpoint=os.path.join(expr_dir, 'ckpts', f'model_step_{ckpt_step}.pt'),
+            save_obs_outs_dir=None,
+            real_robot=False,
+            device='cuda',
+            best_disc_pos='max',
+            num_ensembles=1,
+            seed=100,
+            remained_args=None
+        )
+        self.actioner = Actioner(args)
 
-try:
-    from genrobo3d.rlbench.environments import RLBenchEnv
-except:
-    print('No RLBench')
+    def predict(self, taskvar, episode_id, step_id, instruction, obs_state_dict):
+        task_str, variation_id = taskvar.split('+')
+        variation_id = int(variation_id)
 
-from genrobo3d.train.train_simple_policy import MODEL_FACTORY
+        print(obs_state_dict.keys())
+        for k, v in obs_state_dict.items():
+            if isinstance(v, np.ndarray):
+                print(k, v.shape)
 
-from genrobo3d.configs.rlbench.constants import get_robot_workspace, get_rlbench_labels
-from genrobo3d.utils.robot_box import RobotBox
-from genrobo3d.train.datasets.common import gen_seq_masks
-from genrobo3d.evaluation.common import write_to_file
-from genrobo3d.vlm_models.clip_encoder import ClipEncoder
-
-
-class Arguments(tap.Tap):
-    exp_config: str
-    device: str = 'cuda'  # cpu, cuda
-
-    microstep_data_dir: str = ''
-    seed: int = 100  # seed for RLBench
-    num_demos: int = 20
-    taskvar: str = 'push_button+0'
-    checkpoint: str = None
-
-    headless: bool = False
-    max_tries: int = 10
-    max_steps: int = 25
-    cam_rand_factor: float = 0.0
-    image_size: List[int] = [256, 256]
-
-    save_image: bool = False
-    save_obs_outs_dir: str = None
-    record_video: bool = False
-    not_include_robot_cameras: bool = False
-    video_rotate_cam: bool = False
-    video_resolution: int = 480
-
-    num_ensembles: int = 1
-
-    best_disc_pos: str = 'max' # max, ens1
-
-    real_robot: bool = False
+        out = self.actioner.predict(
+            task_str, variation_id, step_id, obs_state_dict,
+            episode_id, instructions=[instruction]
+        )
+        return out['action']
 
 class Actioner(object):
     def __init__(self, args) -> None:
@@ -343,95 +334,3 @@ class Actioner(object):
             )
 
         return out
-
-
-def evaluate_actioner(args):    
-    
-    set_random_seed(args.seed)
-
-    actioner = Actioner(args)
-    
-    pred_dir = os.path.join(actioner.config.output_dir, 'preds', f'seed{args.seed}')
-    if args.cam_rand_factor > 0:
-        pred_dir = '%s-cam_rand_factor%.1f' % (pred_dir, args.cam_rand_factor)
-    os.makedirs(pred_dir, exist_ok=True)
-
-    if len(args.image_size) == 1:
-        args.image_size = [args.image_size[0], args.image_size[0]]    # (height, width)
-
-    outfile = os.path.join(pred_dir, 'results.jsonl')
-
-    existed_data = set()
-    if os.path.exists(outfile):
-        with jsonlines.open(outfile, 'r') as f:
-            for item in f:
-                existed_data.add((item['checkpoint'], '%s+%d'%(item['task'], item['variation'])))
-
-    if (args.checkpoint, args.taskvar) in existed_data:
-        return
-
-    env = RLBenchEnv(
-        data_path=args.microstep_data_dir,
-        apply_rgb=True,
-        apply_pc=True,
-        apply_mask=True,
-        headless=args.headless,
-        image_size=args.image_size,
-        cam_rand_factor=args.cam_rand_factor,
-    )
-
-    task_str, variation = args.taskvar.split('+')
-    variation = int(variation)
-
-    if args.microstep_data_dir != '':
-        episodes_dir = os.path.join(args.microstep_data_dir, task_str, f"variation{variation}", "episodes")
-        demo_keys, demos = [], []
-        if os.path.exists(str(episodes_dir)):
-            episode_ids = os.listdir(episodes_dir)
-            episode_ids.sort(key=lambda ep: int(ep[7:]))
-            for idx, ep in enumerate(episode_ids):
-                # episode_id = int(ep[7:])
-                try:
-                    demo = env.get_demo(task_str, variation, idx, load_images=False)
-                    demo_keys.append(f'episode{idx}')
-                    demos.append(demo)
-                except Exception as e:
-                    print('\tProblem to load demo_id:', idx, ep)
-                    print(e)
-    else:
-        demo_keys = None
-        demos = None
-            
-    success_rate = env.evaluate(
-        task_str, variation,
-        actioner=actioner,
-        max_episodes=args.max_steps,
-        num_demos=len(demos) if demos is not None else args.num_demos,
-        demos=demos,
-        demo_keys=demo_keys,
-        log_dir=Path(pred_dir),
-        max_tries=args.max_tries,
-        save_image=args.save_image,
-        record_video=args.record_video,
-        include_robot_cameras=(not args.not_include_robot_cameras),
-        video_rotate_cam=args.video_rotate_cam,
-        video_resolution=args.video_resolution,
-    )
-
-    print("Testing Success Rate {}: {:.04f}".format(task_str, success_rate))
-    write_to_file(
-        outfile,
-        {
-            'checkpoint': args.checkpoint,
-            'task': task_str, 'variation': variation,
-            'num_demos': args.num_demos, 'sr': success_rate
-        }
-    )
-
-
-
-if __name__ == '__main__':
-    args = Arguments().parse_args(known_only=True)
-    args.remained_args = args.extra_args
-    
-    evaluate_actioner(args)
