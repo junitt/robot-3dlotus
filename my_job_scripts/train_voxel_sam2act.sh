@@ -7,11 +7,21 @@ export MASTER_ADDR=127.0.0.1  # 使用本机 IP
 export WORLD_SIZE=1  # 单机多卡时设置为 GPU 数量
 export RANK=0  # 当前进程的 rank
 npoints=20480
+rm_table='False'
 
-# data_file=data/gembench/train_dataset/motion_keysteps_bbox_pcd/seed0/voxel1cm
-data_file=data/gembench/train_dataset/motion_withtable_pcd/seed0
-output_dir=data/experiments/gembench/3dlotusplus/sam2act_withtable_$npoints
+if [ "$rm_table" = "True" ]; then
+    data_file=data/gembench/train_dataset/motion_keysteps_bbox_pcd/seed0/voxel1cm
+    val_data_dir=data/gembench/val_dataset/motion_keysteps_bbox_pcd/seed100/voxel1cm
+elif [ "$rm_table" = "False" ]; then
+    data_file=data/gembench/train_dataset/motion_withtable_pcd/seed0
+    val_data_dir=data/gembench/val_dataset/motion_withtable_pcd/seed0
+else
+    echo "wrong "
+    exit 1
+fi
+
 # output_dir=data/experiments/gembench/3dlotusplus/temp
+output_dir=data/experiments/gembench/3dlotusplus/augcolor_lora4_withtable_$npoints
 embed_file=data/gembench/train_dataset/instr_embed/instr_embeds_aug_sam2.npy
 
 rot_type=quat
@@ -21,11 +31,12 @@ max_traj_len=1
 batch_size=8
 
 # 使用 torchrun 启动分布式训练
-CUDA_VISIBLE_DEVICES=0 python genrobo3d/train/train_sam2act.py \
+CUDA_VISIBLE_DEVICES=5 python genrobo3d/train/train_sam2act.py \
     --exp-config genrobo3d/configs/rlbench/motion_planner_ptv3.yaml \
     --exp_cfg_path configs/sam2act.yaml \
     --mvt_cfg_path mvt/configs/sam2act_gembench.yaml \
-    --exp_cfg_opts "peract.lr 1.25e-4 sam2_use_sem True checkpoint data/experiments/gembench/3dlotusplus/sam2act_withtable_20480/ckpts/model_last.pth" \
+    --mvt_cfg_opts "lora_r 4"\
+    --exp_cfg_opts "peract.lr 1e-4 peract.transform_augmentation False sam2_use_sem True" \
     world_size $WORLD_SIZE\
     output_dir ${output_dir} \
     TRAIN.num_epochs null TRAIN.num_train_steps 150000 \
@@ -44,13 +55,13 @@ CUDA_VISIBLE_DEVICES=0 python genrobo3d/train/train_sam2act.py \
     TRAIN_DATASET.augment_pc False VAL_DATASET.augment_pc False \
     TRAIN_DATASET.aug_max_rot 45 \
     TRAIN_DATASET.rm_pc_outliers False VAL_DATASET.rm_pc_outliers False \
-    TRAIN_DATASET.rm_table False VAL_DATASET.rm_table False\
+    TRAIN_DATASET.rm_table $rm_table VAL_DATASET.rm_table $rm_table\
     TRAIN_DATASET.max_traj_len ${max_traj_len} VAL_DATASET.max_traj_len ${max_traj_len} \
     TRAIN_DATASET.pc_label_type mix VAL_DATASET.pc_label_type mix \
     TRAIN_DATASET.pc_label_augment 0.0 VAL_DATASET.pc_label_augment 0.0 \
     TRAIN_DATASET.pc_midstep_augment True VAL_DATASET.pc_midstep_augment True \
     TRAIN_DATASET.pos_type cont VAL_DATASET.pos_type cont\
-    TRAIN_DATASET.data_dir  $data_file\
+    TRAIN_DATASET.data_dir $data_file VAL_DATASET.data_dir  $val_data_dir\
     TRAIN_DATASET.gt_act_obj_label_file assets/taskvars_target_label_zrange.json \
     VAL_DATASET.gt_act_obj_label_file assets/taskvars_target_label_zrange.json \
     TRAIN_DATASET.instr_include_objects True VAL_DATASET.instr_include_objects True \

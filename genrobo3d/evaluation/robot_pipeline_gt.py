@@ -24,7 +24,6 @@ from genrobo3d.models.motion_planner_ptv3 import (
 from genrobo3d.models.simple_policy_ptv3 import SimplePolicyPTV3CA
 from genrobo3d.configs.default import get_config as get_model_config
 from genrobo3d.evaluation.common import load_checkpoint, parse_code
-from genrobo3d.utils.rvt_util import instr_trans,unify_color
 
 class GroundtruthTaskPlanner(object):
     def __init__(self, gt_plan_file):
@@ -64,7 +63,7 @@ class GroundtruthVision(object):
         self, gt_label_file, num_points=4096, voxel_size=0.01, 
         same_npoints_per_example=False, rm_robot='box_keep_gripper',
         xyz_shift='center', xyz_norm=False, use_height=True,
-        pc_label_type='coarse', use_color=False,model_class=None
+        pc_label_type='coarse',rm_table=True, use_color=False,model_class=None
     ):
         self.model_class = model_class
         self.taskvar_gt_target_labels = json.load(open(gt_label_file))#taskvars_target_label_zrange.json文件
@@ -80,6 +79,7 @@ class GroundtruthVision(object):
         self.xyz_norm = xyz_norm
         self.use_height = use_height
         self.use_color = use_color
+        self.rm_table = rm_table
         print(f"sample {self.num_points} points")
         print(f"self.rm_robot {self.rm_robot}")
 
@@ -95,16 +95,17 @@ class GroundtruthVision(object):
             pcd_rgb = rgb_images.reshape(-1, 3)
 
         # remove background and table points
-        # fg_mask = get_pc_foreground_mask(pcd_xyz, self.workspace)
-        # pcd_xyz = pcd_xyz[fg_mask]
-        # pcd_sem = pcd_sem[fg_mask]
-        # if self.use_color:
-        #     pcd_rgb = pcd_rgb[fg_mask]
+        if self.rm_table:
+            fg_mask = get_pc_foreground_mask(pcd_xyz, self.workspace)
+            pcd_xyz = pcd_xyz[fg_mask]
+            pcd_sem = pcd_sem[fg_mask]
+            if self.use_color:
+                pcd_rgb = pcd_rgb[fg_mask]
 
-        # pcd_xyz, idxs = voxelize_pcd(pcd_xyz, voxel_size=self.voxel_size)
-        # pcd_sem = pcd_sem[idxs]
-        # if self.use_color:
-        #     pcd_rgb = pcd_rgb[idxs]
+        pcd_xyz, idxs = voxelize_pcd(pcd_xyz, voxel_size=self.voxel_size)
+        pcd_sem = pcd_sem[idxs]
+        if self.use_color:
+            pcd_rgb = pcd_rgb[idxs]
 
         if self.rm_robot != 'none':
             if self.rm_robot == 'box':
@@ -206,7 +207,7 @@ class GroundtruthRobotPipeline(object):
             same_npoints_per_example=data_cfg.same_npoints_per_example, rm_robot=data_cfg.rm_robot,
             xyz_shift=data_cfg.xyz_shift, xyz_norm=data_cfg.xyz_norm, use_height=data_cfg.use_height,
             pc_label_type=data_cfg.pc_label_type if config.motion_planner.pc_label_type is None else config.motion_planner.pc_label_type, use_color=data_cfg.get('use_color', False),
-            model_class=self.model_class
+            model_class=self.model_class,rm_table=data_cfg.rm_table
         )
 
         # build motion planner
@@ -331,8 +332,6 @@ class GroundtruthRobotPipeline(object):
                 target_name = ''.join([x for x in plan['target'] if not x.isdigit()])
                 target_name = target_name.replace('_', ' ').strip()
                 action_name = f"{action_name} to {target_name}"
-            if self.model_class == "sam2act" and self.motion_planner.use_sem:
-                action_name = instr_trans(action_name)
         # print(action_name)
         if self.model_class == "sam2act":
             action_embeds = torch.tensor(get_embed(self.clip_model,action_name))

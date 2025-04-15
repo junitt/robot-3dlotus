@@ -100,7 +100,7 @@ class Sam2RobotPipeline(GroundtruthRobotPipeline):
             same_npoints_per_example=data_cfg.same_npoints_per_example, rm_robot=data_cfg.rm_robot,
             xyz_shift=data_cfg.xyz_shift, xyz_norm=data_cfg.xyz_norm, use_height=data_cfg.use_height,
             pc_label_type=data_cfg.pc_label_type if config.motion_planner.pc_label_type is None else config.motion_planner.pc_label_type, use_color=data_cfg.get('use_color', False),
-            model_class=self.model_class
+            model_class=self.model_class,rm_table=data_cfg.rm_table
         )
 
         # build motion planner
