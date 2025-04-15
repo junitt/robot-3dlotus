@@ -26,6 +26,7 @@ from genrobo3d.evaluation.common import write_to_file
 
 from genrobo3d.evaluation.robot_pipeline_gt import GroundtruthRobotPipeline
 from genrobo3d.evaluation.sam2act_pipeline import Sam2RobotPipeline
+from genrobo3d.evaluation.sam2act_vlm_pipeline import Sam2RobotPipeline as Sam2VLMRobotPipeline
 from genrobo3d.evaluation.robot_pipeline import RobotPipeline
 from genrobo3d.train.utils.rvt_utils import load_cfgs
 
@@ -89,7 +90,11 @@ def consumer_fn(args, pipeline_config, batch_queue, result_queues):
         else:
             actioner = GroundtruthRobotPipeline(pipeline_config)
     else:
-        actioner = RobotPipeline(pipeline_config)
+        if args.eval_model_type=="sam2act":
+            exp_cfg,mvt_cfg = load_cfgs(args)
+            actioner = Sam2VLMRobotPipeline(exp_cfg,mvt_cfg,pipeline_config)
+        else:
+            actioner = RobotPipeline(pipeline_config)
 
     while True:
         data = batch_queue.get()
@@ -312,7 +317,13 @@ def main():
         )
     else:
         mp_checkpoint_file = os.path.join(
-            args.mp_expr_dir, 'ckpt', f'model_{args.mp_ckpt_step}.pth'
+            args.mp_expr_dir, 'ckpts', f'model_{args.mp_ckpt_step}.pth'
+        )
+        args.exp_cfg_path = os.path.join(
+            args.mp_expr_dir, 'logs', 'exp_cfg.yaml'
+        )
+        args.mvt_cfg_path = os.path.join(
+            args.mp_expr_dir, 'logs', 'mvt_cfg.yaml'
         )
     if not os.path.exists(mp_checkpoint_file):
         print(mp_checkpoint_file, 'not exists')
