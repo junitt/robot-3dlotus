@@ -26,7 +26,7 @@ from genrobo3d.evaluation.common import write_to_file
 
 from genrobo3d.evaluation.robot_pipeline_gt import GroundtruthRobotPipeline
 from genrobo3d.evaluation.sam2act_pipeline import Sam2RobotPipeline
-from genrobo3d.evaluation.sam2act_vlm_pipeline import Sam2RobotPipeline as Sam2VLMRobotPipeline
+
 from genrobo3d.evaluation.robot_pipeline import RobotPipeline
 from genrobo3d.train.utils.rvt_utils import load_cfgs
 
