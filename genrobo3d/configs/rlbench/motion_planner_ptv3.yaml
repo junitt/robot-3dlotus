@@ -48,6 +48,7 @@ TRAIN_DATASET:
   include_last_step: False
   rm_table: True
   transform_color: False
+  crop_label: False
   aug_color: False
   rm_robot: none  # none, gt, box, box_keep_gripper
   augment_pc: True
@@ -84,6 +85,7 @@ VAL_DATASET:
   include_last_step: False
   rm_table: True
   transform_color: False
+  crop_label: False
   aug_color: False
   rm_robot: none  # none, gt, box, box_keep_gripper
   augment_pc: True
