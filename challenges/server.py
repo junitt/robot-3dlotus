@@ -7,22 +7,13 @@ msgpack_numpy.patch()
 
 from flask import Flask, request
 
-from challenges.actioner import (
-    RandomActioner, 
-    ThreeDLotusActioner, 
-    ThreeDLotusPlusActioner
-)
+from genrobo3d.agents.ThreeDLotus import ThreeDLotusActioner
 
 
 def main(args):
     app = Flask(__name__)
     
-    if args.model == '3dlotus':
-        actioner = ThreeDLotusActioner()
-    elif args.model == '3dlotusplus':
-        actioner = ThreeDLotusPlusActioner()
-    else:
-        actioner = RandomActioner()
+    actioner = ThreeDLotusActioner()
 
     @app.route('/predict', methods=['POST'])
     def predict():
