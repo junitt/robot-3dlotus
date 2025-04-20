@@ -45,7 +45,7 @@ class MotionPlannerDataset(SimplePolicyDataset):
             pos_type='cont', pos_bins=50, pos_bin_size=0.01, 
             pos_heatmap_type='plain', pos_heatmap_no_robot=False, 
             aug_max_rot=45, use_color=False, instr_include_objects=False, 
-            real_robot=False,transform_color=False,aug_color=False, **kwargs
+            real_robot=False,transform_color=False,aug_color=False,crop_label=False, **kwargs
         ):
 
         assert instr_embed_type in ['last', 'all']
@@ -125,6 +125,7 @@ class MotionPlannerDataset(SimplePolicyDataset):
         self.TABLE_HEIGHT = get_robot_workspace(real_robot=self.real_robot)['TABLE_HEIGHT']
         self.rotation_transform = RotationMatrixTransform()
         self.transform_color = transform_color
+        self.crop_label = crop_label
         self.data_cache={}
 
     def _aug_pc_color(self,instr_dict:dict,aug_label:str,exp_col_lst:list,pc,pc_labels):
@@ -398,6 +399,17 @@ class MotionPlannerDataset(SimplePolicyDataset):
             if self.use_color:
                 rgb = (rgb / 255.) * 2 - 1
                 pc_ft = np.concatenate([pc_ft, rgb], 1)
+            if self.crop_label: 
+                crop_poss=60
+                if random.randint(1,100)<crop_poss:
+                    drop_percent = random.randint(25,75)
+                    for i in range(len(pc_label)):
+                        label = pc_label[i]
+                        if label==2 or label==3:
+                            if random.randint(1,100)>drop_percent:
+                                continue
+                            pc_label[i]=0
+
 
             if self.transform_color:
                 action_name = instr_trans(action_name)
@@ -405,14 +417,14 @@ class MotionPlannerDataset(SimplePolicyDataset):
                 pc_ft = unify_color(pc_label,pc_ft)
             
             if self.aug_color and taskvar in self.color_dict.keys():
-                aug_shred = 70
-                if random.randint(1,100)<aug_shred:#进行增强
+                aug_thresh = 95
+                if random.randint(1,100)<aug_thresh:#进行增强
                     except_color_lst = self.color_dict[taskvar]['distractor_colors']
                     aug_label = self.color_dict[taskvar]['aug_label']
-                    # if task == "stack_blocks" and \
-                    #     gt_act_obj_labels[keystep]['action']=="move grasped object" and \
-                    #     gt_act_obj_labels[keystep]["target"]["name"]!="green square":
-                    #         aug_label = "target"
+                    if task == "stack_blocks" and \
+                        gt_act_obj_labels[keystep]['action']=="move grasped object" and \
+                        gt_act_obj_labels[keystep]["target"]["name"]!="green square":
+                            aug_label = "target"
                     if aug_label in gt_act_obj_labels[keystep].keys():
                         action_name,pc_ft = self._aug_pc_color(gt_act_obj_labels[keystep],aug_label,except_color_lst,pc_ft,pc_label)
                     # print(f"{aug_label} {taskvar} {action_name}")
