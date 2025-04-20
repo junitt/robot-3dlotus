@@ -282,7 +282,8 @@ class MotionPlannerDataset(SimplePolicyDataset):
                     action_name = f"{action_name} {gt_act_obj_labels[keystep]['object']['name']}"
                 if 'target' in gt_act_obj_labels[keystep]:
                     action_name = f"{action_name} to {gt_act_obj_labels[keystep]['target']['name']}"
-            action_embed = self.action_embeds[action_name]
+            if not self.transform_color:
+                action_embed = self.action_embeds[action_name]
 
             # remove background points
             if self.rm_table:
