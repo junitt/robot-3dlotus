@@ -56,6 +56,7 @@ def load_agent(
         get_model_size(sam2act)
 
         agent = SAM2Act_Agent(
+            dataset_transform_color = exp_cfg.transform_color,
             use_sem=exp_cfg.sam2_use_sem,
             network=sam2act.to(device),
             image_resolution=[IMAGE_SIZE, IMAGE_SIZE],
@@ -93,6 +94,7 @@ class Sam2RobotPipeline(GroundtruthRobotPipeline):
         mp_config_file = config.motion_planner.config_file
         mp_config = get_model_config(mp_config_file)
         data_cfg = mp_config.TRAIN_DATASET
+        self.exp_cfg.transform_color = data_cfg.transform_color
         self.instr_include_objects = data_cfg.get('instr_include_objects', False)
         self.vlm_pipeline = GroundtruthVision(
             self.config.object_grounding.gt_label_file,
