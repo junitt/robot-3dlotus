@@ -126,6 +126,7 @@ class MotionPlannerDataset(SimplePolicyDataset):
         self.rotation_transform = RotationMatrixTransform()
         self.transform_color = transform_color
         self.crop_label = crop_label
+        self.crop_with_idx = False
         self.data_cache={}
 
     def _aug_pc_color(self,instr_dict:dict,aug_label:str,exp_col_lst:list,pc,pc_labels):
@@ -240,7 +241,7 @@ class MotionPlannerDataset(SimplePolicyDataset):
         # else:
         data = msgpack.unpackb(self.lmdb_txns[taskvar].get(data_id))
         # self.data_cache[query_key]=data
-
+        self.crop_with_idx = self.crop_label and 'img_idx' in data.keys()
         outs = {
             'data_ids': [], 'pc_fts': [], 'pc_labels': [], 
             'pc_centroids': [], 'pc_radius': [], 'ee_poses': [], 
@@ -263,6 +264,8 @@ class MotionPlannerDataset(SimplePolicyDataset):
                 continue
 
             xyz, rgb, gt_sem = data['xyz'][t], data['rgb'][t], data['sem'][t]
+            if self.crop_with_idx:
+                img_idx = data['img_idx'][t]
             arm_links_info = (
                 {k: v[t] for k, v in data['bbox_info'].items()}, 
                 {k: v[t] for k, v in data['pose_info'].items()}
@@ -291,16 +294,22 @@ class MotionPlannerDataset(SimplePolicyDataset):
                 xyz = xyz[mask]
                 rgb = rgb[mask]
                 gt_sem = gt_sem[mask]
+                if self.crop_with_idx:
+                    img_idx = img_idx[mask]
                 
             if self.rm_robot.startswith('box'):
                 mask = self._get_mask_with_robot_box(xyz.copy(), arm_links_info, self.rm_robot)
                 xyz = xyz[mask]
                 rgb = rgb[mask]
                 gt_sem = gt_sem[mask]
+                if self.crop_with_idx:
+                    img_idx = img_idx[mask]
 
             if self.rm_pc_outliers:
                 xyz, rgb, point_idxs = self._rm_pc_outliers(xyz, rgb=rgb, return_idxs=True)
                 gt_sem = gt_sem[point_idxs]
+                if self.crop_with_idx:
+                    img_idx = img_idx[point_idxs]
 
             # sampling points
             if len(xyz) > self.num_points:
@@ -315,6 +324,8 @@ class MotionPlannerDataset(SimplePolicyDataset):
             xyz = xyz[point_idxs]
             rgb = rgb[point_idxs]
             gt_sem = gt_sem[point_idxs]
+            if self.crop_with_idx:
+                img_idx = img_idx[point_idxs]
             height = xyz[:, -1] - self.TABLE_HEIGHT
 
             # robot_mask = self._get_mask_with_label_ids(gt_sem, robot_label_ids)
@@ -374,24 +385,24 @@ class MotionPlannerDataset(SimplePolicyDataset):
             outs['pc_radius'].append(radius)
 
             gt_trajs = np.concatenate([gt_trajs[:, :3], gt_rots, gt_trajs[:, -1:]], -1)
-            if self.transform_color and task=='push_button':
-                #data sem error, training only top is object, test all is object
-                obj_list_xyz = []
-                for i in range(len(pc_label)):
-                    label = pc_label[i]
-                    pt = xyz[i]
-                    if label==2 or label==0:
-                        pc_label[i]=2
-                        obj_list_xyz.append(pt)
+            # if self.transform_color and task=='push_button':
+            #     #data sem error, training only top is object, test all is object
+            #     obj_list_xyz = []
+            #     for i in range(len(pc_label)):
+            #         label = pc_label[i]
+            #         pt = xyz[i]
+            #         if label==2 or label==0:
+            #             pc_label[i]=2
+            #             obj_list_xyz.append(pt)
                 
-                gen_distractor_num = random.randint(0, 3)
-                target_xyz = np.array(obj_list_xyz)
-                aug_pc = self._get_distract_obj_pc(target_xyz,gen_distractor_num)
-                if aug_pc is not None:
-                    pc_label = np.concatenate([pc_label,np.zeros(len(aug_pc), dtype=np.int32)])
-                    xyz = np.concatenate([xyz,aug_pc],0)
-                    rgb = np.concatenate([rgb,np.ones((len(aug_pc),3), dtype=np.uint8)*255],0)
-                    height = np.concatenate([height,np.zeros(len(aug_pc), dtype=np.float64)])
+            #     gen_distractor_num = random.randint(0, 3)
+            #     target_xyz = np.array(obj_list_xyz)
+            #     aug_pc = self._get_distract_obj_pc(target_xyz,gen_distractor_num)
+            #     if aug_pc is not None:
+            #         pc_label = np.concatenate([pc_label,np.zeros(len(aug_pc), dtype=np.int32)])
+            #         xyz = np.concatenate([xyz,aug_pc],0)
+            #         rgb = np.concatenate([rgb,np.ones((len(aug_pc),3), dtype=np.uint8)*255],0)
+            #         height = np.concatenate([height,np.zeros(len(aug_pc), dtype=np.float64)])
                     
 
             pc_ft = xyz
@@ -400,7 +411,19 @@ class MotionPlannerDataset(SimplePolicyDataset):
             if self.use_color:
                 rgb = (rgb / 255.) * 2 - 1
                 pc_ft = np.concatenate([pc_ft, rgb], 1)
-            if self.crop_label: 
+
+            if self.crop_with_idx:#use img index to crop
+                n_cam = 4
+                n_save = random.randint(1,n_cam)# start from zero
+                reserve_lst = np.random.permutation(n_cam)[:n_save].tolist()
+                assert len(pc_label)==len(img_idx)
+                for i in range(len(pc_label)):
+                    label = pc_label[i]
+                    if label==2 or label==3:
+                        if img_idx[i] in reserve_lst:
+                            continue
+                        pc_label[i]=0
+            elif self.crop_label: 
                 crop_poss=60
                 if random.randint(1,100)<crop_poss:
                     drop_percent = random.randint(25,75)
