@@ -24,6 +24,7 @@ from genrobo3d.models.motion_planner_ptv3 import (
 from genrobo3d.models.simple_policy_ptv3 import SimplePolicyPTV3CA
 from genrobo3d.configs.default import get_config as get_model_config
 from genrobo3d.evaluation.common import load_checkpoint, parse_code
+from genrobo3d.utils.rvt_util import instr_trans
 
 class GroundtruthTaskPlanner(object):
     def __init__(self, gt_plan_file):
@@ -332,6 +333,8 @@ class GroundtruthRobotPipeline(object):
                 target_name = ''.join([x for x in plan['target'] if not x.isdigit()])
                 target_name = target_name.replace('_', ' ').strip()
                 action_name = f"{action_name} to {target_name}"
+        if self.model_class == "sam2act" and self.transform_color:
+            action_name = instr_trans(action_name)
         # print(action_name)
         if self.model_class == "sam2act":
             action_embeds = torch.tensor(get_embed(self.clip_model,action_name))

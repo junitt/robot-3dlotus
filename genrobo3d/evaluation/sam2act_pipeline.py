@@ -104,6 +104,7 @@ class Sam2RobotPipeline(GroundtruthRobotPipeline):
             pc_label_type=data_cfg.pc_label_type if config.motion_planner.pc_label_type is None else config.motion_planner.pc_label_type, use_color=data_cfg.get('use_color', False),
             model_class=self.model_class,rm_table=data_cfg.rm_table
         )
+        self.transform_color = data_cfg.transform_color
 
         # build motion planner
         # self.clip_model = OpenClipEncoder(device=self.device) # to encode action/object texts

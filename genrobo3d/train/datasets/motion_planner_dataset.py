@@ -417,12 +417,22 @@ class MotionPlannerDataset(SimplePolicyDataset):
                 n_save = random.randint(1,n_cam)# start from zero
                 reserve_lst = np.random.permutation(n_cam)[:n_save].tolist()
                 assert len(pc_label)==len(img_idx)
+                pc_label_cache = pc_label.copy()
+                obj_label_cnt = 0
+                res_cnt = 0
                 for i in range(len(pc_label)):
                     label = pc_label[i]
                     if label==2 or label==3:
+                        obj_label_cnt+=1
                         if img_idx[i] in reserve_lst:
+                            res_cnt+=1
                             continue
-                        pc_label[i]=0
+                        pc_label_cache[i]=0
+                if obj_label_cnt>0:#action need obj or target label
+                    if res_cnt/obj_label_cnt<0.1:#task need more label
+                        assert n_save<4
+                    else:
+                        pc_label = pc_label_cache
             elif self.crop_label: 
                 crop_poss=60
                 if random.randint(1,100)<crop_poss:

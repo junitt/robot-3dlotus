@@ -45,7 +45,8 @@ class Sam2Actioner(Actioner):
 
         # build motion planner
         self.clip_model = get_clip_model() # to encode action/object texts
-        self.motion_planner, self.mp_config = self.build_motion_planner(config.motion_planner)        
+        self.motion_planner, self.mp_config = self.build_motion_planner(config.motion_planner)
+        self.transform_color = self.mp_config.TRAIN_DATASET.transform_color
 
         # caches
         self.set_system_caches()
@@ -153,7 +154,7 @@ class Sam2Actioner(Actioner):
                 target_name = ''.join([x for x in plan['target'] if not x.isdigit()])
                 target_name = target_name.replace('_', ' ').strip()
                 action_name = f"{action_name} to {target_name}"
-            if self.motion_planner.use_sem:
+            if self.transform_color:
                 action_name = instr_trans(action_name)
         # print('action name', action_name)
 
