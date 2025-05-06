@@ -310,8 +310,7 @@ class GroundtruthRobotPipeline(object):
         
         if plan['action'] == 'myrecover':
             action = copy.deepcopy(self._ori_gripper_pose[f'{taskvar}_{episode_id}']) #最开始的gripper状态
-            action[0] += 20 # 返回加2开启避障模式
-            action[7] = gripper_pose[7]
+            action[7] = 1
             cache.highlevel_step_id += 1
             return {'action': action, 'cache': cache}
 
@@ -371,6 +370,8 @@ class GroundtruthRobotPipeline(object):
                 break
 
         if pred_action[-1] > 0.5:
+            if plan['action']=='push down':
+                pred_actions[:, :3]-=0.01
             cache.highlevel_step_id += 1
             cache.highlevel_step_id_norelease += 1
         
