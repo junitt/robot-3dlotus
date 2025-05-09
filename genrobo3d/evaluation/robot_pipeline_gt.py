@@ -285,6 +285,17 @@ class GroundtruthRobotPipeline(object):
             
             # print('plans\n', highlevel_plans)
             cache.highlevel_plans = [parse_code(x) for x in highlevel_plans]
+            #insert myrecover
+            release_cnt = 0
+            id = -1
+            for idx,plan in enumerate(cache.highlevel_plans[:-1]):
+                if plan['action'] == 'release':
+                    release_cnt+=1
+                    if release_cnt==2:
+                        id = idx
+            if release_cnt>=2:#insert recover
+                cache.highlevel_plans.insert(id+1,{'action': 'myrecover', 'object': None, 'target': None, 'is_target_variable': False, 'is_object_variable': False, 'not_objects': None, 'ret_val': None})
+            
             cache.highlevel_step_id = 0
             cache.highlevel_step_id_norelease = 0
             # print('parsed plans\n', self.cache.highlevel_plans)
@@ -308,7 +319,7 @@ class GroundtruthRobotPipeline(object):
             cache.highlevel_step_id += 1
             return {'action': action, 'cache': cache}
         
-        if plan['action'] == 'myrecover':
+        if plan['action'] == 'myrecover':#use after 2 release
             action = copy.deepcopy(self._ori_gripper_pose[f'{taskvar}_{episode_id}']) #最开始的gripper状态
             action[7] = 1
             cache.highlevel_step_id += 1

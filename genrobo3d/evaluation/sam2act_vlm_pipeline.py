@@ -78,7 +78,7 @@ class Sam2RobotPipeline(RobotPipeline):
         self, vlm_results, plan, arm_links_info, gripper_pose, voxel_size=0.01, 
         rm_robot='none', num_points=4096, same_npoints_per_example=False,
         xyz_shift='center', xyz_norm=False, use_height=False, zrange=None,
-        target_var_xyz=None, use_color=False, instr_include_objects=False,
+        object_xyz=None,last_obj_xyz=None,target_var_xyz=None, use_color=False, instr_include_objects=False
     ):
         pcd_xyz, pcd_rgb, pcd_label = [], [], []
         for k, obj_data in enumerate(vlm_results.objects):
@@ -100,6 +100,32 @@ class Sam2RobotPipeline(RobotPipeline):
                 if best_obj_id is not None:
                     # print(query, best_obj_id, pred_sim)
                     if query_key == 'object':
+                        last_obj_id = None
+                        if last_obj_xyz is not None and len(last_obj_xyz)>0 and len(last_obj_xyz)<len(pred_sim):
+                            for last_obj_pcd in last_obj_xyz:
+                                last_obj_pcd = torch.from_numpy(last_obj_pcd).float().to(self.device).unsqueeze(0)
+                                obj_target_var_dists = [self.vlm_pipeline.chamfer_dist_fn(
+                                    last_obj_pcd, 
+                                    torch.from_numpy(obj.pcd_xyz).float().to(self.device).unsqueeze(0),
+                                    bidirectional=True
+                                    )[0].item()
+                                    for obj in vlm_results.objects if len(obj.captions) == 0]
+                                last_obj_id = np.argmin(obj_target_var_dists)
+                                assert len(pred_sim)==len(obj_target_var_dists)
+                                pred_sim[last_obj_id]=-10000
+                            best_obj_id = np.argmax(pred_sim)
+                            
+                        if object_xyz is not None:
+                            object_xyz = torch.from_numpy(object_xyz).float().to(self.device).unsqueeze(0)
+                            obj_target_var_dists = [self.vlm_pipeline.chamfer_dist_fn(
+                                object_xyz, 
+                                torch.from_numpy(obj.pcd_xyz).float().to(self.device).unsqueeze(0),
+                                bidirectional=True
+                                )[0].item()
+                                for obj in vlm_results.objects if len(obj.captions) == 0]
+                            if last_obj_id is not None:
+                                obj_target_var_dists[last_obj_id] = 100
+                            best_obj_id = np.argmin(obj_target_var_dists)
                         pcd_label[best_obj_id][:] = 2
                         mani_obj.pcd_xyz = pcd_xyz[best_obj_id]
                         mani_obj.name = plan['ret_val']
@@ -227,8 +253,9 @@ class Sam2RobotPipeline(RobotPipeline):
             #init cache
             cache = EasyDict(
                 valid_actions = [], object_vars = {}, highlevel_plans = [],
-                ret_objs = {}, grasped_obj_name = None, 
-                prev_ee_pose = copy.deepcopy(obs_state_dict['gripper'])
+                ret_objs = {}, grasped_obj_name = None, last_obj = [],
+                prev_ee_pose = copy.deepcopy(obs_state_dict['gripper']), single_step_obj = None,
+                robot_fts = None, start_flag = False
             )
             if self.config.motion_planner.save_obs_outs:
                 cache.episode_outdir = os.path.join(
@@ -277,6 +304,16 @@ class Sam2RobotPipeline(RobotPipeline):
             
             # print('plans\n', highlevel_plans)
             cache.highlevel_plans = [parse_code(x) for x in highlevel_plans]
+            #insert myrecover
+            release_cnt = 0
+            id = -1
+            for idx,plan in enumerate(cache.highlevel_plans[:-1]):
+                if plan['action'] == 'release':
+                    release_cnt+=1
+                    id = idx
+
+            if release_cnt>=2:#insert recover in last release
+                cache.highlevel_plans.insert(id+1,{'action': 'myrecover', 'object': None, 'target': None, 'is_target_variable': False, 'is_object_variable': False, 'not_objects': None, 'ret_val': None})
             cache.highlevel_step_id = 0
             # print('parsed plans\n', self.cache.highlevel_plans)
 
@@ -309,10 +346,9 @@ class Sam2RobotPipeline(RobotPipeline):
             cache.highlevel_step_id += 1
             cache.grasped_obj_name = None
             return {'action': action, 'cache': cache}
-        if plan['action'] == 'myrecover':
+        if plan['action'] == 'myrecover':#use after 2 release
             action = copy.deepcopy(self._ori_gripper_pose[f'{taskvar}_{episode_id}']) #最开始的gripper状态
-            action[0] += 20 # 返回加2开启避障模式
-            action[7] = gripper_pose[7]
+            action[7] = 1
             cache.highlevel_step_id += 1
             return {'action': action, 'cache': cache}
 
@@ -325,6 +361,15 @@ class Sam2RobotPipeline(RobotPipeline):
         else:
             target_var_xyz = None
 
+
+        if plan['action'] in ['grasp','push down'] and cache.single_step_obj is not None:
+            object_xyz = cache.single_step_obj
+        else:
+            object_xyz = None
+        if plan['action'] in ['push down']:
+            last_obj_xyz = cache.last_obj
+        else:
+            last_obj_xyz = None
         #calc zrange
         zrange = None
         if plan['object'] is not None and 'drawer' in plan['object']:# estimate target drawer
@@ -367,14 +412,31 @@ class Sam2RobotPipeline(RobotPipeline):
             use_color=self.mp_config.TRAIN_DATASET.get('use_color', False),
             instr_include_objects=self.mp_config.TRAIN_DATASET.get('instr_include_objects', False),
             zrange=zrange,
+            object_xyz=object_xyz,last_obj_xyz=last_obj_xyz,
             target_var_xyz=target_var_xyz,
         )
 
         if 'mani_obj' in extra_outs:
             cache.ret_objs[extra_outs.mani_obj.name] = extra_outs.mani_obj.pcd_xyz
+            cache.single_step_obj = extra_outs.mani_obj.pcd_xyz
             if plan['action'] == 'grasp':
                 cache.grasped_obj_name = extra_outs.mani_obj.name
         
+        if step_id == 0:
+            # TODO record robot 'pc_fts': torch.from_numpy(pcd_ft).float()
+            mask = (batch['pc_labels'] == 1)
+            cache.robot_fts = batch['pc_fts'][mask]
+
+        if cache.start_flag and plan['action']=='push down':#start of single action
+            mask = (batch['pc_labels'] != 1)
+            batch['pc_fts'] = batch['pc_fts'][mask]
+            batch['pc_labels'] = batch['pc_labels'][mask]#remove real gripper
+            batch['pc_fts'] = torch.cat((batch['pc_fts'],cache.robot_fts),0)
+            batch['pc_labels'] = torch.cat((batch['pc_labels'],torch.ones((len(cache.robot_fts))).long()),0)
+            cache.start_flag = False # next step isn't start point
+            batch['ee_poses'][:, 7] = 1
+
+
         pred_actions = self.motion_planner(batch, compute_loss=False)[0] # (max_action_len, 8)
         # print(pred_actions)
 
@@ -392,6 +454,13 @@ class Sam2RobotPipeline(RobotPipeline):
                 break
 
         if pred_action[-1] > 0.5:
+            if plan['action']=='push down':
+                pred_actions[:, 2]-=0.01
+                cache.start_flag = True#next is start of an action
+            cache.last_obj.append(cache.single_step_obj)
+            if len(cache.last_obj)==4:
+                cache.last_obj = []
+            cache.single_step_obj = None #reset op obj
             cache.highlevel_step_id += 1
         
         cache.valid_actions = valid_actions[1:]
