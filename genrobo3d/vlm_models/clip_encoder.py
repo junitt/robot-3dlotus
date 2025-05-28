@@ -44,6 +44,7 @@ class ClipEncoder(nn.Module):
     def __init__(self, model_name='openai/clip-vit-base-patch32', device=None):
         super().__init__()
         os.environ['TOKENIZERS_PARALLELISM'] = 'false'
+        model_name = '../huggingface/models--openai--clip-vit-base-patch32/snapshots/3d74acf9a28c67741b2f4f2ea7635f0aaf6f0268'
         self.model = CLIPModel.from_pretrained(model_name)
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
         self.processor = CLIPProcessor.from_pretrained(model_name)

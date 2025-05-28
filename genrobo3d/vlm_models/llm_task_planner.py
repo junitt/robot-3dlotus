@@ -63,8 +63,9 @@ class LlamaTaskPlanner(object):
             self.use_local_llama = False
 
         # Load sentence-bert to measure sentence similarity
-        self.bert_tokenizer = AutoTokenizer.from_pretrained('sentence-transformers/all-MiniLM-L6-v2')
-        self.bert_model = AutoModel.from_pretrained('sentence-transformers/all-MiniLM-L6-v2').to(self.device)
+        bert_encoder_id = '../huggingface/models--sentence-transformers--all-MiniLM-L6-v2/snapshots/c9745ed1d9f207416be6d2e6f8de32d1f16199bf'
+        self.bert_tokenizer = AutoTokenizer.from_pretrained(bert_encoder_id)
+        self.bert_model = AutoModel.from_pretrained(bert_encoder_id).to(self.device)
 
         self.temperature = temperature  # 0 means greedy decoding
         self.top_p = top_p              # for nucleus sampling

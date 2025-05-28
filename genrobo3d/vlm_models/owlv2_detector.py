@@ -89,9 +89,9 @@ class Owlv2ObjectDetector(object):
             self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         else:
             self.device = device
-
-        self.processor = Owlv2Processor.from_pretrained(model_id)
-        self.model = Owlv2ForObjectDetection.from_pretrained(model_id, device_map=self.device)
+        detect_model_id = '../huggingface/models--google--owlv2-large-patch14-ensemble/snapshots/95e26936e865f87db1742128404b3c035d47d89d'
+        self.processor = Owlv2Processor.from_pretrained(detect_model_id)
+        self.model = Owlv2ForObjectDetection.from_pretrained(detect_model_id, device_map=self.device)
 
         self.image_size = self.processor.image_processor.size
         self.image_size = [self.image_size['width'], self.image_size['height']]

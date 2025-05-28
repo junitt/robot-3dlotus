@@ -22,9 +22,9 @@ class SAMSegmentor(object):
            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         else:
            self.device = device
-
-        self.processor = SamProcessor.from_pretrained(model_id)
-        self.model = SamModel.from_pretrained(model_id, device_map=self.device)
+        Sam_path = '../huggingface/models--facebook--sam-vit-huge/snapshots/87aecf0df4ce6b30cd7de76e87673c49644bdf67'
+        self.processor = SamProcessor.from_pretrained(Sam_path)
+        self.model = SamModel.from_pretrained(Sam_path, device_map=self.device)
 
         self.image_longest_edge = self.processor.image_processor.size['longest_edge']
         
