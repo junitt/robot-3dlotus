@@ -16,7 +16,7 @@ import torch
 from genrobo3d.configs.rlbench.constants import get_robot_workspace
 from genrobo3d.utils.point_cloud import voxelize_pcd, get_pc_foreground_mask
 from genrobo3d.utils.robot_box import RobotBox
-from genrobo3d.utils.rvt_clip_preprocess import get_clip_model,get_embed
+
 from genrobo3d.vlm_models.clip_encoder import ClipEncoder
 from genrobo3d.models.motion_planner_ptv3 import (
     MotionPlannerPTV3AdaNorm, MotionPlannerPTV3CA
@@ -24,7 +24,11 @@ from genrobo3d.models.motion_planner_ptv3 import (
 from genrobo3d.models.simple_policy_ptv3 import SimplePolicyPTV3CA
 from genrobo3d.configs.default import get_config as get_model_config
 from genrobo3d.evaluation.common import load_checkpoint, parse_code
-from genrobo3d.utils.rvt_util import instr_trans
+try:
+    from genrobo3d.utils.rvt_clip_preprocess import get_clip_model,get_embed
+    from genrobo3d.utils.rvt_util import instr_trans
+except ImportError:
+    print("won't use rvt2")
 
 class GroundtruthTaskPlanner(object):
     def __init__(self, gt_plan_file):
