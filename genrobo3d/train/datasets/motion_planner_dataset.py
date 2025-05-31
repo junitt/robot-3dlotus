@@ -196,10 +196,10 @@ class MotionPlannerDataset(SimplePolicyDataset):
         y_min=SCENE_BOUNDS[1]
         x_max=SCENE_BOUNDS[3]
         y_max=SCENE_BOUNDS[4]
-        x_min+=7*l
-        x_max-=7*l
-        y_min+=7*l
-        y_max-=7*l
+        x_min+=7*l+0.125
+        x_max-=7*l+0.125
+        y_min+=7*l+0.125
+        y_max-=7*l+0.125
         o_p=None
         o_lst = [o]
         for _ in range(200):
@@ -385,24 +385,26 @@ class MotionPlannerDataset(SimplePolicyDataset):
             outs['pc_radius'].append(radius)
 
             gt_trajs = np.concatenate([gt_trajs[:, :3], gt_rots, gt_trajs[:, -1:]], -1)
-            # if self.transform_color and task=='push_button':
-            #     #data sem error, training only top is object, test all is object
-            #     obj_list_xyz = []
-            #     for i in range(len(pc_label)):
-            #         label = pc_label[i]
-            #         pt = xyz[i]
-            #         if label==2 or label==0:
-            #             pc_label[i]=2
-            #             obj_list_xyz.append(pt)
+            if self.transform_color and task=='push_button':
+                #data sem error, training only top is object, test all is object
+                obj_list_xyz = []
+                for i in range(len(pc_label)):
+                    label = pc_label[i]
+                    pt = xyz[i]
+                    if label==2 or label==0:
+                        obj_list_xyz.append(pt)
                 
-            #     gen_distractor_num = random.randint(0, 3)
-            #     target_xyz = np.array(obj_list_xyz)
-            #     aug_pc = self._get_distract_obj_pc(target_xyz,gen_distractor_num)
-            #     if aug_pc is not None:
-            #         pc_label = np.concatenate([pc_label,np.zeros(len(aug_pc), dtype=np.int32)])
-            #         xyz = np.concatenate([xyz,aug_pc],0)
-            #         rgb = np.concatenate([rgb,np.ones((len(aug_pc),3), dtype=np.uint8)*255],0)
-            #         height = np.concatenate([height,np.zeros(len(aug_pc), dtype=np.float64)])
+                gen_distractor_num = random.randint(0, 3)
+                target_xyz = np.array(obj_list_xyz)
+                aug_pc = self._get_distract_obj_pc(target_xyz,gen_distractor_num)
+                if aug_pc is not None:
+                    pc_label = np.concatenate([pc_label,np.zeros(len(aug_pc), dtype=np.int32)])
+                    xyz = np.concatenate([xyz,aug_pc],0)
+                    rgb = np.concatenate([rgb,np.ones((len(aug_pc),3), dtype=np.uint8)*255],0)
+                    height = np.concatenate([height,np.zeros(len(aug_pc), dtype=np.float64)])
+                    if self.crop_with_idx:#use img index to crop
+                        n_cam = 4
+                        img_idx = np.concatenate([img_idx,np.ones(len(aug_pc), dtype=np.int32)*(n_cam+1)])
                     
 
             pc_ft = xyz
@@ -412,37 +414,39 @@ class MotionPlannerDataset(SimplePolicyDataset):
                 rgb = (rgb / 255.) * 2 - 1
                 pc_ft = np.concatenate([pc_ft, rgb], 1)
 
-            if self.crop_with_idx:#use img index to crop
-                n_cam = 4
-                n_save = random.randint(1,n_cam)# start from zero
-                reserve_lst = np.random.permutation(n_cam)[:n_save].tolist()
-                assert len(pc_label)==len(img_idx)
-                pc_label_cache = pc_label.copy()
-                obj_label_cnt = 0
-                res_cnt = 0
-                for i in range(len(pc_label)):
-                    label = pc_label[i]
-                    if label==2 or label==3:
-                        obj_label_cnt+=1
-                        if img_idx[i] in reserve_lst:
-                            res_cnt+=1
-                            continue
-                        pc_label_cache[i]=0
-                if obj_label_cnt>0:#action need obj or target label
-                    if res_cnt/obj_label_cnt<0.1:#task need more label
-                        assert n_save<4
-                    else:
-                        pc_label = pc_label_cache
-            elif self.crop_label: 
-                crop_poss=60
-                if random.randint(1,100)<crop_poss:
-                    drop_percent = random.randint(25,75)
+            avoid_task_lst = ['open_door','open_drawer','put_money_in_safe','close_fridge','close_microwave','close_laptop_lid','open_box']
+            if task not in avoid_task_lst:#l3 tasks
+                if self.crop_with_idx :#use img index to crop
+                    n_cam = 4
+                    n_save = random.randint(1,n_cam)# start from zero
+                    reserve_lst = np.random.permutation(n_cam)[:n_save].tolist()
+                    assert len(pc_label)==len(img_idx)
+                    pc_label_cache = pc_label.copy()
+                    obj_label_cnt = 0
+                    res_cnt = 0
                     for i in range(len(pc_label)):
                         label = pc_label[i]
                         if label==2 or label==3:
-                            if random.randint(1,100)>drop_percent:
+                            obj_label_cnt+=1
+                            if img_idx[i] in reserve_lst:
+                                res_cnt+=1
                                 continue
-                            pc_label[i]=0
+                            pc_label_cache[i]=0
+                    if obj_label_cnt>0:#action need obj or target label
+                        if res_cnt/obj_label_cnt<0.1:#task need more label
+                            assert n_save<4
+                        else:
+                            pc_label = pc_label_cache
+                elif self.crop_label: 
+                    crop_poss=60
+                    if random.randint(1,100)<crop_poss:
+                        drop_percent = random.randint(25,75)
+                        for i in range(len(pc_label)):
+                            label = pc_label[i]
+                            if label==2 or label==3:
+                                if random.randint(1,100)>drop_percent:
+                                    continue
+                                pc_label[i]=0
 
 
             if self.transform_color:
@@ -645,21 +649,21 @@ if __name__ == '__main__':
     torch.cuda.manual_seed_all(seed)
 
     max_traj_len = 1
-    data_file="data/gembench/train_dataset/motion_keysteps_bbox_pcd_sam2/seed0"
+    data_file="/data5/lzy/data/gembench/train_dataset/motion_imgidx"
     dataset = MotionPlannerDataset(
         data_file,
-        'data/gembench/train_dataset/instr_embed/action-object_embeds_clip.npy',
+        'data/gembench/train_dataset/instr_embed/instr_unicolor_sam2.npy',
         'assets/taskvars_target_label_zrange.json',
-        taskvar_file='assets/taskvars_train.json', 
+        taskvar_file='assets/taskvars_trainl3.json', 
         num_points=20480, xyz_shift='none', xyz_norm=False, use_height=True,
-        max_traj_len=max_traj_len, pc_label_type='coarse',
+        max_traj_len=max_traj_len, pc_label_type='mix',
         pc_label_augment=False, pc_midstep_augment=True, augment_pc=True,
         rot_type='quat', instr_embed_type='last', all_step_in_batch=False,
         rm_robot='gt', include_last_step=False, 
         same_npoints_per_example=False,instr_include_objects=True,
         rm_pc_outliers=False, rm_pc_outliers_neighbors=25, euler_resolution=5,
         pos_type='cont', pos_bins=15, pos_bin_size=0.01, pos_heatmap_type='dist',
-        pos_heatmap_no_robot=True,transform_color=False,aug_color=True
+        pos_heatmap_no_robot=True,transform_color=True,aug_color=False,crop_label=True
     )
     # dataset = MotionPlannerRealRobotDataset(
     #     'data/real_robot_data/v3/keysteps_bbox_pcd_cam2_motionplanner_vlm',
@@ -698,9 +702,16 @@ if __name__ == '__main__':
     sm_bs=0
     sm=0
     from tqdm import tqdm
+    all_score = []
     for epoch in range(123):
         for batch in tqdm(dataloader):
-            sm+=1
+            all_score.extend(batch['per_score'])
+            print(sum(all_score)/len(all_score))
+            for score in all_score:
+                print(f"{score:.2f}")
+            # print(sum(all_score)/len(all_score))
+        print(sum(all_score)/len(all_score))
+        # print(f"final score:{dataset.most_score/dataset.data_cnt}")
         #     if isinstance(v, torch.Tensor):
         #         print(k, v.size())
         #     else:
